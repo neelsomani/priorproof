@@ -1,0 +1,20 @@
+{
+  "reuse_thresholds": [3, 5, 8, 13],
+  "min_family_support": 5,
+  "retrieval_k": 32,
+  "encoder": {
+    "dimensions": 512,
+    "namespace_weight": 0.35,
+    "module_weight": 0.25,
+    "shape_weight": 0.4
+  },
+  "prior": {
+    "alpha": 0.25,
+    "retrieval_weight": 0.55,
+    "namespace_weight": 0.2,
+    "module_weight": 0.15,
+    "global_weight": 0.1,
+    "retrieval_temperature": 0.2
+  }
+}
+
