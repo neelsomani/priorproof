@@ -1,0 +1,20 @@
+{
+  "base_model": "sentence-transformers/all-MiniLM-L6-v2",
+  "epochs": 1,
+  "batch_size": 64,
+  "learning_rate": 2e-5,
+  "warmup_ratio": 0.1,
+  "max_seq_length": 256,
+  "time_slicing": {
+    "default": "frozen_early_with_neighbor_stability_check",
+    "fallback": "per_snapshot_encoder"
+  },
+  "pair_mining": {
+    "shared_family_min": 2,
+    "downstream_user_min": 2,
+    "namespace_symbol_jaccard_min": 0.35,
+    "lexical_negative_jaccard_min": 0.25,
+    "hard_negatives_per_pair": 4
+  }
+}
+

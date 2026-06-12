@@ -11,14 +11,13 @@ from .snapshots import (
     dependency_adjacency,
     snapshot_for_target,
 )
-from ..modeling.encoder import StatementEncoder
 from ..metric.filtering import DependencyFilter
 from ..metric.frontier import established_frontier
 from ..data.io import read_json, read_jsonl, write_json, write_jsonl
 from ..data.models import DeclarationRecord, Dependency, Footprint, Snapshot
 from ..modeling.prior import PriorConfig, build_hierarchical_prior
 from ..metric.redundancy import detect_redundant_subterms, exact_wrapper_flags
-from ..modeling.retriever import StatementRetriever
+from ..modeling.retriever import StatementEmbeddingModel, StatementRetriever
 from ..metric.scoring import score_footprint
 
 
@@ -117,7 +116,7 @@ def dependency_lookup_for(
 def score_with_retrieval_prior(
     declarations: list[DeclarationRecord],
     footprints: list[Footprint],
-    encoder: StatementEncoder,
+    encoder: StatementEmbeddingModel,
     config: PriorConfig | None = None,
     k: int = 32,
     snapshots: list[Snapshot] | None = None,

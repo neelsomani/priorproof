@@ -1,9 +1,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from math import sqrt
+from typing import Protocol
 
-from .encoder import StatementEncoder, cosine
 from ..data.models import DeclarationRecord
+
+
+class StatementEmbeddingModel(Protocol):
+    def encode(self, record: DeclarationRecord | str) -> list[float]:
+        ...
 
 
 @dataclass(frozen=True)
@@ -23,7 +29,7 @@ class RetrievalHit:
 
 
 class StatementRetriever:
-    def __init__(self, encoder: StatementEncoder, records: list[DeclarationRecord]) -> None:
+    def __init__(self, encoder: StatementEmbeddingModel, records: list[DeclarationRecord]) -> None:
         self.encoder = encoder
         self.records = records
         self.vectors = {record.name: encoder.encode(record) for record in records}
@@ -53,3 +59,11 @@ def neighbor_overlap(lhs: list[RetrievalHit], rhs: list[RetrievalHit], k: int | 
         return 1.0
     return len(left & right) / max(1, len(left | right))
 
+
+def cosine(lhs: list[float], rhs: list[float]) -> float:
+    numerator = sum(a * b for a, b in zip(lhs, rhs))
+    lhs_norm = sqrt(sum(value * value for value in lhs))
+    rhs_norm = sqrt(sum(value * value for value in rhs))
+    if lhs_norm == 0.0 or rhs_norm == 0.0:
+        return 0.0
+    return numerator / (lhs_norm * rhs_norm)

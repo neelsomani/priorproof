@@ -2,12 +2,22 @@ from __future__ import annotations
 
 from datetime import date
 
-from priorproof.modeling.encoder import StatementEncoder
+from priorproof.modeling.contrastive import PairMiningConfig, mine_contrastive_examples
 from priorproof.data.models import DeclarationRecord, Footprint, FootprintItem
 from priorproof.modeling.prior import PriorConfig, build_hierarchical_prior
 from priorproof.modeling.retriever import StatementRetriever
 from priorproof.metric.scoring import score_footprint
 from priorproof.evaluation.reports import chronological_prediction_test, threshold_sweep_summary
+
+
+class ToyStatementEncoder:
+    def encode(self, record: DeclarationRecord | str) -> list[float]:
+        statement = record.statement if isinstance(record, DeclarationRecord) else record
+        if "*" in statement:
+            return [1.0, 0.0]
+        if "+" in statement:
+            return [0.0, 1.0]
+        return [0.5, 0.5]
 
 
 def record(name: str, statement: str, day: int, namespace: str = "Algebra") -> DeclarationRecord:
@@ -38,7 +48,7 @@ def test_encoder_retriever_and_prior_build() -> None:
         record("c", "forall n, n + 0 = n", 3, namespace="Nat"),
     ]
     target = record("target", "forall y, y * 1 = y", 4)
-    encoder = StatementEncoder().fit(pre_t)
+    encoder = ToyStatementEncoder()
     hits = StatementRetriever(encoder, pre_t).query(target, k=2)
     footprints = {"a": footprint("a", "namespace:Algebra"), "b": footprint("b", "namespace:Algebra")}
     prior = build_hierarchical_prior(target, pre_t, footprints, hits, PriorConfig())
@@ -56,3 +66,30 @@ def test_validation_summaries() -> None:
     sweep = threshold_sweep_summary({5: [score_low], 8: [score_high]})
     assert sweep["thresholds"] == [5, 8]
 
+
+def test_contrastive_example_mining_from_shared_families_and_hard_negatives() -> None:
+    records = [
+        record("a", "forall x, compact x -> closed x", 1),
+        record("b", "forall y, compact y -> bounded y", 2),
+        record("c", "forall z, z + 0 = z", 3),
+    ]
+    footprints = [
+        footprint("a", "namespace:Topology"),
+        Footprint(
+            declaration="b",
+            snapshot_id="2024Q1",
+            threshold=5,
+            items=(
+                FootprintItem("namespace:Topology", "top", 1.0, 0, 3),
+                FootprintItem("namespace:Compact", "compact", 1.0, 0, 3),
+            ),
+            filtered_dependencies=("top", "compact"),
+        ),
+        footprint("c", "namespace:Nat"),
+    ]
+    examples = mine_contrastive_examples(
+        records,
+        footprints,
+        PairMiningConfig(shared_family_min=1, namespace_symbol_jaccard_min=0.1),
+    )
+    assert any(example.anchor == "a" and example.positive == "b" for example in examples)

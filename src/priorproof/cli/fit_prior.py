@@ -3,8 +3,8 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from priorproof.modeling.encoder import StatementEncoder
-from priorproof.data.io import read_json, write_json
+from priorproof.modeling.neural_encoder import load_neural_statement_encoder
+from priorproof.data.io import write_json
 from priorproof.corpus.pipeline import load_declarations, load_footprints, load_snapshots, score_with_retrieval_prior
 from priorproof.modeling.prior import PriorConfig, chronological_log_likelihood
 
@@ -25,7 +25,7 @@ def main() -> None:
     declarations = load_declarations(args.declarations)
     footprints = load_footprints(args.footprints)
     snapshots = load_snapshots(args.snapshots) if args.snapshots else None
-    encoder = StatementEncoder.from_json(read_json(args.encoder))
+    encoder = load_neural_statement_encoder(args.encoder)
     candidates = [
         PriorConfig(alpha=alpha, retrieval_weight=rw, namespace_weight=nw, module_weight=mw, global_weight=gw)
         for alpha in (0.1, 0.25, 0.5)

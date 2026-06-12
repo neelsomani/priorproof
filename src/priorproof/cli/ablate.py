@@ -3,8 +3,8 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from priorproof.modeling.encoder import StatementEncoder
-from priorproof.data.io import read_json, write_jsonl
+from priorproof.modeling.neural_encoder import load_neural_statement_encoder
+from priorproof.data.io import write_jsonl
 from priorproof.corpus.pipeline import load_declarations, load_footprints, load_snapshots, score_with_retrieval_prior
 from priorproof.modeling.prior import PriorConfig
 
@@ -34,7 +34,7 @@ def main() -> None:
     declarations = load_declarations(args.declarations)
     footprints = load_footprints(args.footprints)
     snapshots = load_snapshots(args.snapshots)
-    encoder = StatementEncoder.from_json(read_json(args.encoder))
+    encoder = load_neural_statement_encoder(args.encoder)
     for name, config in ABLATIONS.items():
         scores, priors = score_with_retrieval_prior(
             declarations,
@@ -50,4 +50,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

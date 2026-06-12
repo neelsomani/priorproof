@@ -34,7 +34,7 @@ The one residual that no mechanism closes is *diffuse* human-mediated influence:
 
 **Metric.** Implement deterministic dependency filtering, recursive unfolding to the established-machinery frontier, inverse-frequency weighting, family backoff, and the surprisal score. First scores on hand-picked high/low examples act as smoke tests, including the Euler-re-derivation construction as a redundancy-detector unit test.
 
-**Prior and encoder.** Train the statement-only encoder on free formal weak labels. Build the multi-stage retriever over Lean statements. Fit the hierarchical-smoothed, retrieval-conditioned prior by chronological log-likelihood. Resolve encoder time-slicing via the neighbor-stability check; run the parametric-leakage probe.
+**Prior and encoder.** Mine proof-derived contrastive pairs, fine-tune a transformer statement encoder, build the multi-stage retriever over Lean statements, and fit the hierarchical-smoothed retrieval-conditioned prior by chronological log-likelihood. Resolve encoder time-slicing via the neighbor-stability check; run the parametric-leakage probe.
 
 **Validation.** Run all six mechanical tests. Run the threshold sweep and confirm results hold across it. Run the canonical-case suite as documented qualitative behavior. Recruit two domain raters; collect 50–100 pairwise comparisons on footprint-nonstandardness; report agreement, ceiling, metric-vs-consensus, and the naive-LLM baseline.
 
@@ -186,10 +186,11 @@ Estimate what dependencies would have been expected for a theorem before its pro
 
 This step does four things:
 
-1. Build a statement-only encoder. It reads theorem statements, not proofs, and turns them into vectors so similar statements can be compared. This is the leakage boundary: the target proof is never used to retrieve neighbors.
-2. Retrieve pre-time neighbors. For a target theorem `D`, the retriever looks only inside the snapshot that predates `D` and finds the older theorem statements closest to `D`'s statement.
-3. Build the prior distribution over dependency families. The prior is a probability distribution over families like `namespace:Mathlib.Topology.Compact` or `module:Mathlib.MeasureTheory.Integral`. It mixes evidence from retrieved neighbors, declarations in the same namespace, declarations in the same module, and the whole pre-time corpus. If retrieval is sparse, namespace/module/global smoothing keeps plausible families from getting zero probability.
-4. Score novelty. The scorer takes the actual footprint from the metric step and sums `-log(probability)` for each footprint family, weighted by the dependency weights. A high score means the proof used families that the pre-time prior assigned low probability.
+1. Mine contrastive training examples from the pre-time corpus. Positives come from shared proof families, shared downstream users, major dependency links, and same-namespace symbol overlap. Hard negatives come from statements that look similar but have no dependency-family overlap or a different theorem shape.
+2. Fine-tune a transformer statement encoder. It reads theorem statements, not proofs, and turns them into vectors so similar statements can be compared. This requires the optional ML dependencies and a modest GPU.
+3. Retrieve pre-time neighbors. For a target theorem `D`, the retriever looks only inside the snapshot that predates `D` and finds the older theorem statements closest to `D`'s statement.
+4. Build the prior distribution over dependency families. The prior is a probability distribution over families like `namespace:Mathlib.Topology.Compact` or `module:Mathlib.MeasureTheory.Integral`. It mixes evidence from retrieved neighbors, declarations in the same namespace, declarations in the same module, and the whole pre-time corpus. If retrieval is sparse, namespace/module/global smoothing keeps plausible families from getting zero probability.
+5. Score novelty. The scorer takes the actual footprint from the metric step and sums `-log(probability)` for each footprint family, weighted by the dependency weights. A high score means the proof used families that the pre-time prior assigned low probability.
 
 Concrete shape:
 
@@ -220,33 +221,48 @@ novelty score
 
 Relevant files:
 
-- `src/priorproof/modeling/encoder.py`: deterministic statement-only encoder.
+- `src/priorproof/modeling/contrastive.py`: proof-derived positive pair and hard-negative mining.
+- `src/priorproof/modeling/neural_encoder.py`: optional transformer fine-tuning and neural statement encoder.
 - `src/priorproof/modeling/retriever.py`: statement-neighbor retrieval.
 - `src/priorproof/modeling/prior.py`: retrieval/namespace/module/global smoothed prior.
 - `src/priorproof/corpus/pipeline.py`: `score_with_retrieval_prior` orchestration.
-- `src/priorproof/cli/train_encoder.py`: encoder training command.
+- `src/priorproof/cli/build_contrastive_data.py`: contrastive data mining command.
+- `src/priorproof/cli/train_neural_encoder.py`: neural encoder fine-tuning command.
 - `src/priorproof/cli/fit_prior.py`: prior grid search by chronological likelihood.
 - `src/priorproof/cli/score_novelty.py`: novelty scoring command.
+- `docs/encoder.md`: learned encoder training and time-slicing details.
 
 Run:
 
 ```bash
-priorproof-train-encoder \
-  --declarations data/earliest_slice.jsonl \
-  --out artifacts/encoder.json
+python3 -m pip install -e ".[ml]"
+
+priorproof-build-contrastive-data \
+  --declarations data/declarations.jsonl \
+  --footprints artifacts/corpus/footprints_t5.jsonl \
+  --out-examples artifacts/encoder/contrastive_examples_t5.jsonl \
+  --out-report artifacts/encoder/contrastive_report_t5.json
+
+priorproof-train-neural-encoder \
+  --declarations data/declarations.jsonl \
+  --examples artifacts/encoder/contrastive_examples_t5.jsonl \
+  --base-model sentence-transformers/all-MiniLM-L6-v2 \
+  --out-dir artifacts/encoder/neural_t5 \
+  --epochs 1 \
+  --batch-size 64
 
 priorproof-fit-prior \
   --declarations data/declarations.jsonl \
   --footprints artifacts/corpus/footprints_t5.jsonl \
   --snapshots artifacts/corpus/snapshots.json \
-  --encoder artifacts/encoder.json \
+  --encoder artifacts/encoder/neural_t5 \
   --out artifacts/prior_grid_t5.json
 
 priorproof-score \
   --declarations data/declarations.jsonl \
   --footprints artifacts/corpus/footprints_t5.jsonl \
   --snapshots artifacts/corpus/snapshots.json \
-  --encoder artifacts/encoder.json \
+  --encoder artifacts/encoder/neural_t5 \
   --out-scores artifacts/scores_t5.jsonl \
   --out-priors artifacts/priors_t5.jsonl
 ```

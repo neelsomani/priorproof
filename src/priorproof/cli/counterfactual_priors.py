@@ -4,8 +4,8 @@ import argparse
 import random
 from pathlib import Path
 
-from priorproof.modeling.encoder import StatementEncoder
-from priorproof.data.io import read_json, write_jsonl
+from priorproof.modeling.neural_encoder import load_neural_statement_encoder
+from priorproof.data.io import write_jsonl
 from priorproof.corpus.pipeline import load_declarations, load_footprints, load_snapshots
 from priorproof.modeling.prior import PriorConfig, build_hierarchical_prior
 from priorproof.modeling.retriever import RetrievalHit
@@ -31,7 +31,7 @@ def main() -> None:
     declarations = load_declarations(args.declarations)
     footprints = load_footprints(args.footprints)
     snapshots = load_snapshots(args.snapshots)
-    StatementEncoder.from_json(read_json(args.encoder))
+    load_neural_statement_encoder(args.encoder)
     by_name = {record.name: record for record in declarations}
     by_snapshot = {snapshot.snapshot_id: snapshot for snapshot in snapshots}
     footprints_by_decl = {footprint.declaration: footprint for footprint in footprints}
@@ -71,4 +71,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
