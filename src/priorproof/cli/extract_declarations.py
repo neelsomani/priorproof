@@ -16,6 +16,7 @@ from priorproof.extraction.snapshots import (
     render_command_template,
     run_extractor_command,
     snapshots_from_manifest,
+    validate_snapshot_commits,
 )
 
 
@@ -79,10 +80,12 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     manifest = load_snapshot_manifest(args.manifest)
-    repo = Path(args.mathlib_repo)
-    worktrees_dir = Path(args.worktrees_dir)
-    raw_dir = Path(args.raw_dir)
-    normalized_dir = Path(args.normalized_dir)
+    repo = Path(args.mathlib_repo).resolve()
+    if args.execute:
+        validate_snapshot_commits(repo, manifest)
+    worktrees_dir = Path(args.worktrees_dir).resolve()
+    raw_dir = Path(args.raw_dir).resolve()
+    normalized_dir = Path(args.normalized_dir).resolve()
     raw_dir.mkdir(parents=True, exist_ok=True)
     normalized_dir.mkdir(parents=True, exist_ok=True)
     worktrees_dir.mkdir(parents=True, exist_ok=True)

@@ -8,6 +8,7 @@ from priorproof.corpus.pipeline import load_declarations, load_footprints, load_
 from priorproof.data.io import read_json, write_json
 from priorproof.modeling.neural_encoder import load_encoder_map, load_neural_statement_encoder
 from priorproof.modeling.retriever import StatementRetriever, neighbor_overlap
+from priorproof.cli.encoder_args import required_encoder_snapshot_ids
 
 
 def parse_args() -> argparse.Namespace:
@@ -41,7 +42,7 @@ def main() -> None:
     by_name = {record.name: record for record in declarations}
     footprints_by_decl = {footprint.declaration: footprint for footprint in footprints}
     by_snapshot = {snapshot.snapshot_id: snapshot for snapshot in snapshots}
-    missing = sorted({footprint.snapshot_id for footprint in footprints} - set(encoders_by_snapshot))
+    missing = sorted(set(required_encoder_snapshot_ids(footprints, snapshots)) - set(encoders_by_snapshot))
     if missing:
         raise ValueError(f"--encoder-map is missing snapshots: {missing}")
     candidates = [
@@ -49,6 +50,7 @@ def main() -> None:
         for footprint in footprints
         if footprint.declaration in by_name
         and footprint.snapshot_id in by_snapshot
+        and by_snapshot[footprint.snapshot_id].declarations
     ]
     rng = random.Random(args.seed)
     rng.shuffle(candidates)

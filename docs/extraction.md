@@ -22,6 +22,7 @@ Create a manifest from an explicit commit map:
 ```bash
 priorproof-make-snapshot-manifest \
   --commits configs/snapshot_commits.example.json \
+  --mathlib-repo external/mathlib4 \
   --out artifacts/extraction/manifest.json
 ```
 
@@ -29,7 +30,7 @@ Each manifest item has:
 
 - `snapshot_id`: usually `YYYYQn`.
 - `start_date`: cutoff date for the snapshot.
-- `commit`: Mathlib commit frozen at that cutoff.
+- `commit`: Mathlib commit frozen at that cutoff. Use `"auto"` with `--mathlib-repo` to resolve the latest local commit before the snapshot date.
 
 ## Extraction Orchestration
 

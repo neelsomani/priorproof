@@ -65,16 +65,20 @@ def build_statement_index(records: Iterable[DeclarationRecord]) -> dict[str, lis
 
 def detect_redundant_subterms(
     target: DeclarationRecord,
-    pre_t_records: Iterable[DeclarationRecord],
+    pre_t_records: Iterable[DeclarationRecord] | None = None,
+    statement_index: dict[str, list[DeclarationRecord]] | None = None,
 ) -> tuple[RedundancyHit, ...]:
-    index = build_statement_index(pre_t_records)
+    if statement_index is None:
+        if pre_t_records is None:
+            raise ValueError("pre_t_records or statement_index is required")
+        statement_index = build_statement_index(pre_t_records)
     hits: list[RedundancyHit] = []
     for idx, subterm in enumerate(target.subterms):
         conclusion = str(subterm.get("conclusion") or subterm.get("normalized_conclusion") or "")
         if not conclusion:
             continue
         normalized = str(subterm.get("normalized_conclusion") or canonical_statement(conclusion))
-        candidates = index.get(normalized, [])
+        candidates = statement_index.get(normalized, [])
         if not candidates:
             continue
         matched = sorted(candidates, key=lambda item: item.proof_date)[0]
@@ -106,4 +110,3 @@ def exact_wrapper_flags(target: DeclarationRecord, pre_t_names: set[str]) -> tup
                 )
             )
     return tuple(hits)
-

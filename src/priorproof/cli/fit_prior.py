@@ -4,7 +4,13 @@ import argparse
 from pathlib import Path
 
 from priorproof.data.io import write_json
-from priorproof.corpus.pipeline import load_declarations, load_footprints, load_snapshots, score_with_retrieval_prior
+from priorproof.corpus.pipeline import (
+    build_retrieval_prior_contexts,
+    load_declarations,
+    load_footprints,
+    load_snapshots,
+    score_retrieval_prior_contexts,
+)
 from priorproof.modeling.prior import PriorConfig, chronological_log_likelihood
 from priorproof.cli.encoder_args import add_encoder_args, load_encoder_selection
 
@@ -25,7 +31,16 @@ def main() -> None:
     declarations = load_declarations(args.declarations)
     footprints = load_footprints(args.footprints)
     snapshots = load_snapshots(args.snapshots) if args.snapshots else None
-    encoder, encoders_by_snapshot = load_encoder_selection(args, footprints)
+    encoder, encoders_by_snapshot = load_encoder_selection(args, footprints, snapshots)
+    contexts, footprints_by_decl = build_retrieval_prior_contexts(
+        declarations,
+        footprints,
+        encoder,
+        encoders_by_snapshot=encoders_by_snapshot,
+        k=args.k,
+        snapshots=snapshots,
+    )
+    scored_footprints = [context.footprint for context in contexts]
     candidates = [
         PriorConfig(alpha=alpha, retrieval_weight=rw, namespace_weight=nw, module_weight=mw, global_weight=gw)
         for alpha in (0.1, 0.25, 0.5)
@@ -40,17 +55,9 @@ def main() -> None:
     best = None
     best_ll = float("-inf")
     for config in candidates:
-        _, prior_rows = score_with_retrieval_prior(
-            declarations,
-            footprints,
-            encoder,
-            encoders_by_snapshot=encoders_by_snapshot,
-            config=config,
-            k=args.k,
-            snapshots=snapshots,
-        )
+        _, prior_rows = score_retrieval_prior_contexts(contexts, footprints_by_decl, config=config)
         priors = {row["declaration"]: row["prior"] for row in prior_rows}
-        ll = chronological_log_likelihood(footprints, priors)
+        ll = chronological_log_likelihood(scored_footprints, priors)
         row = {
             "alpha": config.alpha,
             "retrieval_weight": config.retrieval_weight,

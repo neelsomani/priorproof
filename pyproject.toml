@@ -15,7 +15,8 @@ dev = ["pytest>=8"]
 ml = [
   "sentence-transformers>=3.0",
   "torch>=2.2",
-  "faiss-cpu>=1.8",
+  "datasets>=2.19",
+  "accelerate>=1.1",
 ]
 
 [project.scripts]

@@ -87,6 +87,8 @@ priorproof-fit-prior \
   --out artifacts/prior_grid_t5.json
 ```
 
+Only snapshots with a non-empty pre-time corpus need an encoder entry. A leading snapshot used only to establish the first extraction boundary is not scoreable because there are no earlier declarations from which to build retrieval neighbors or a prior.
+
 To validate the frozen-early shortcut:
 
 ```bash
@@ -94,9 +96,9 @@ priorproof-check-encoder-stability \
   --declarations data/declarations.jsonl \
   --footprints artifacts/corpus/footprints_t5.jsonl \
   --snapshots artifacts/corpus/snapshots.json \
-  --reference-encoder artifacts/encoder/neural_t5_earliest \
+  --reference-encoder artifacts/encoder/neural_t5_2024Q1 \
   --encoder-map artifacts/encoder/encoder_map_t5.json \
   --out artifacts/encoder/stability_t5.json
 ```
 
-If the stability artifact reports `"passed": true`, scoring commands may use `--encoder artifacts/encoder/neural_t5_earliest --allow-shared-encoder`. Without `--allow-shared-encoder`, multi-snapshot scoring refuses a single encoder.
+If the stability artifact reports `"passed": true`, scoring commands may use `--encoder artifacts/encoder/neural_t5_2024Q1 --allow-shared-encoder`. Without `--allow-shared-encoder`, multi-snapshot scoring refuses a single encoder.

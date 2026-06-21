@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from math import sqrt
-from typing import Protocol
+from typing import Protocol, Sequence
 
 from ..data.models import DeclarationRecord
 
@@ -32,22 +32,92 @@ class StatementRetriever:
     def __init__(self, encoder: StatementEmbeddingModel, records: list[DeclarationRecord]) -> None:
         self.encoder = encoder
         self.records = records
-        self.vectors = {record.name: encoder.encode(record) for record in records}
+        vectors = encode_many(encoder, records)
+        self._index = VectorIndex(records, vectors)
+        self.vectors = [] if self._index.is_accelerated else vectors
 
     def query(self, target: DeclarationRecord, k: int = 32) -> list[RetrievalHit]:
         target_vector = self.encoder.encode(target.statement)
+        return self._index.query(target_vector, target.name, k)
+
+
+class VectorIndex:
+    def __init__(self, records: list[DeclarationRecord], vectors: list[list[float]]) -> None:
+        self.records = records
+        self.vectors = vectors
+        self._matrix = None
+        self.is_accelerated = False
+        if not records:
+            return
+        try:
+            import numpy as np
+        except ImportError:
+            return
+        matrix = np.asarray(vectors, dtype="float32")
+        if matrix.ndim != 2 or matrix.shape[0] == 0:
+            return
+        norms = np.linalg.norm(matrix, axis=1, keepdims=True)
+        matrix = matrix / np.maximum(norms, 1e-12)
+        self._matrix = matrix
+        self.vectors = []
+        self.is_accelerated = True
+
+    def query(self, target_vector: list[float], target_name: str, k: int) -> list[RetrievalHit]:
+        if not self.records:
+            return []
+        if self._matrix is not None:
+            return self._query_numpy(target_vector, target_name, k)
+        return self._query_python(target_vector, target_name, k)
+
+    def _query_numpy(self, target_vector: list[float], target_name: str, k: int) -> list[RetrievalHit]:
+        import numpy as np
+
+        query = np.asarray([target_vector], dtype="float32")
+        query = query / np.maximum(np.linalg.norm(query, axis=1, keepdims=True), 1e-12)
+        scores = self._matrix @ query[0]
+        limit = min(len(self.records), k + 1)
+        if limit < len(scores):
+            indices = np.argpartition(scores, -limit)[-limit:]
+            indices = indices[np.argsort(scores[indices])[::-1]]
+        else:
+            indices = np.argsort(scores)[::-1]
+        hits = []
+        for idx in indices:
+            record = self.records[int(idx)]
+            if record.name == target_name:
+                continue
+            hits.append(
+                RetrievalHit(
+                    name=record.name,
+                    score=float(scores[int(idx)]),
+                    module=record.module,
+                    namespace=record.namespace,
+                )
+            )
+            if len(hits) >= k:
+                break
+        return hits
+
+    def _query_python(self, target_vector: list[float], target_name: str, k: int) -> list[RetrievalHit]:
         hits = [
             RetrievalHit(
                 name=record.name,
-                score=cosine(target_vector, self.vectors[record.name]),
+                score=cosine(target_vector, vector),
                 module=record.module,
                 namespace=record.namespace,
             )
-            for record in self.records
-            if record.name != target.name
+            for record, vector in zip(self.records, self.vectors)
+            if record.name != target_name
         ]
         hits.sort(key=lambda item: item.score, reverse=True)
         return hits[:k]
+
+
+def encode_many(encoder: StatementEmbeddingModel, records: Sequence[DeclarationRecord | str]) -> list[list[float]]:
+    batch_encoder = getattr(encoder, "encode_many", None)
+    if batch_encoder is not None:
+        return batch_encoder(records)
+    return [encoder.encode(record) for record in records]
 
 
 def neighbor_overlap(lhs: list[RetrievalHit], rhs: list[RetrievalHit], k: int | None = None) -> float:

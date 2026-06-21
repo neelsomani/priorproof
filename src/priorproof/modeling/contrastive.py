@@ -15,8 +15,9 @@ class PairMiningConfig:
     downstream_user_min: int = 2
     namespace_symbol_jaccard_min: float = 0.35
     lexical_negative_jaccard_min: float = 0.25
-    max_pairs_per_signal: int = 250_000
+    max_pairs_per_signal: int = 50_000
     hard_negatives_per_pair: int = 4
+    bucket_window: int = 16
 
 
 @dataclass(frozen=True)
@@ -107,22 +108,32 @@ def mine_positive_pairs(
     pairs: list[StatementPair] = []
     seen: set[tuple[str, str, str]] = set()
 
-    for left, right in combinations(sorted(family_sets), 2):
-        overlap = family_sets[left] & family_sets[right]
-        if len(overlap) >= config.shared_family_min:
-            add_pair(pairs, seen, left, right, "shared_premise_families", float(len(overlap)))
-            if len(pairs) >= config.max_pairs_per_signal:
-                break
+    shared_counts: Counter[tuple[str, str]] = Counter()
+    for names in inverted_index(family_sets).values():
+        for left, right in windowed_pairs(names, config.bucket_window):
+            shared_counts[(left, right)] += 1
+            if shared_counts[(left, right)] >= config.shared_family_min:
+                add_pair(pairs, seen, left, right, "shared_premise_families", float(shared_counts[(left, right)]))
+                if signal_count(pairs, "shared_premise_families") >= config.max_pairs_per_signal:
+                    break
+        if signal_count(pairs, "shared_premise_families") >= config.max_pairs_per_signal:
+            break
 
     downstream = downstream_users(records)
     downstream_positive_count = 0
-    for left, right in combinations(sorted(by_name), 2):
-        shared_users = downstream.get(left, set()) & downstream.get(right, set())
-        if len(shared_users) >= config.downstream_user_min:
-            add_pair(pairs, seen, left, right, "shared_downstream_users", float(len(shared_users)))
-            downstream_positive_count += 1
-            if downstream_positive_count >= config.max_pairs_per_signal:
-                break
+    shared_user_counts: Counter[tuple[str, str]] = Counter()
+    for users in downstream.values():
+        for left, right in windowed_pairs(users, config.bucket_window):
+            shared_user_counts[(left, right)] += 1
+            if shared_user_counts[(left, right)] >= config.downstream_user_min:
+                before = len(pairs)
+                add_pair(pairs, seen, left, right, "shared_downstream_users", float(shared_user_counts[(left, right)]))
+                if len(pairs) > before:
+                    downstream_positive_count += 1
+                if downstream_positive_count >= config.max_pairs_per_signal:
+                    break
+        if downstream_positive_count >= config.max_pairs_per_signal:
+            break
 
     dependency_positive_count = 0
     for record in records:
@@ -132,24 +143,99 @@ def mine_positive_pairs(
                 dependency_positive_count += 1
                 if dependency_positive_count >= config.max_pairs_per_signal:
                     break
+        if dependency_positive_count >= config.max_pairs_per_signal:
+            break
 
     namespace_positive_count = 0
-    for left, right in combinations(sorted(by_name), 2):
-        left_record = by_name[left]
-        right_record = by_name[right]
-        if left_record.namespace != right_record.namespace:
-            continue
-        similarity = token_jaccard(left_record.statement, right_record.statement)
-        if similarity >= config.namespace_symbol_jaccard_min:
-            add_pair(pairs, seen, left, right, "namespace_symbol_overlap", similarity)
-            namespace_positive_count += 1
-            if namespace_positive_count >= config.max_pairs_per_signal:
-                break
+    for names in group_names(records, key=lambda record: record.namespace).values():
+        for left, right in windowed_pairs(names, config.bucket_window):
+            left_record = by_name[left]
+            right_record = by_name[right]
+            similarity = token_jaccard(left_record.statement, right_record.statement)
+            if similarity >= config.namespace_symbol_jaccard_min:
+                add_pair(pairs, seen, left, right, "namespace_symbol_overlap", similarity)
+                namespace_positive_count += 1
+                if namespace_positive_count >= config.max_pairs_per_signal:
+                    break
+        if namespace_positive_count >= config.max_pairs_per_signal:
+            break
 
     return pairs
 
 
 def mine_hard_negative_pairs(
+    records: list[DeclarationRecord],
+    footprints: list[Footprint],
+    config: PairMiningConfig | None = None,
+) -> list[StatementPair]:
+    config = config or PairMiningConfig()
+    by_name = {record.name: record for record in records}
+    family_sets = footprint_family_sets(footprints)
+    features = statement_features(records)
+    pairs: list[StatementPair] = []
+    seen: set[tuple[str, str, str]] = set()
+    signal_limits: Counter[str] = Counter()
+
+    for names in group_names(records, key=lambda record: record.namespace).values():
+        for left, right in windowed_pairs(names, config.bucket_window):
+            left_record = by_name[left]
+            right_record = by_name[right]
+            overlap = family_sets.get(left, set()) & family_sets.get(right, set())
+            if not overlap:
+                add_limited_pair(
+                    pairs,
+                    seen,
+                    signal_limits,
+                    left,
+                    right,
+                    "same_namespace_no_dependency_overlap",
+                    1.0,
+                    config.max_pairs_per_signal,
+                )
+
+    for names in group_names(records, key=lambda record: features[record.name]["head"]).values():
+        for left, right in windowed_pairs(names, config.bucket_window):
+            if features[left]["shape"] != features[right]["shape"]:
+                add_limited_pair(
+                    pairs,
+                    seen,
+                    signal_limits,
+                    left,
+                    right,
+                    "same_head_different_shape",
+                    1.0,
+                    config.max_pairs_per_signal,
+                )
+
+    token_buckets: dict[str, list[str]] = defaultdict(list)
+    for record in records:
+        for token in features[record.name]["tokens"]:
+            token_buckets[token].append(record.name)
+    for names in token_buckets.values():
+        for left, right in windowed_pairs(names, config.bucket_window):
+            left_record = by_name[left]
+            right_record = by_name[right]
+            if left_record.module == right_record.module:
+                continue
+            lexical = token_jaccard_sets(features[left]["tokens"], features[right]["tokens"])
+            if lexical >= config.lexical_negative_jaccard_min:
+                add_limited_pair(
+                    pairs,
+                    seen,
+                    signal_limits,
+                    left,
+                    right,
+                    "cross_module_lexical_false_friend",
+                    lexical,
+                    config.max_pairs_per_signal,
+                )
+        if signal_limits["cross_module_lexical_false_friend"] >= config.max_pairs_per_signal:
+            break
+
+    return pairs
+
+
+def mine_hard_negative_pairs_exhaustive(
     records: list[DeclarationRecord],
     footprints: list[Footprint],
     config: PairMiningConfig | None = None,
@@ -177,6 +263,31 @@ def mine_hard_negative_pairs(
     return pairs
 
 
+def inverted_index(items_by_name: dict[str, set[str]]) -> dict[str, list[str]]:
+    output: dict[str, list[str]] = defaultdict(list)
+    for name, items in items_by_name.items():
+        for item in items:
+            output[item].append(name)
+    return {item: sorted(names) for item, names in output.items()}
+
+
+def group_names(
+    records: Iterable[DeclarationRecord],
+    key,
+) -> dict[str, list[str]]:
+    output: dict[str, list[str]] = defaultdict(list)
+    for record in records:
+        output[str(key(record))].append(record.name)
+    return {group: sorted(names) for group, names in output.items()}
+
+
+def windowed_pairs(names: Iterable[str], window: int) -> Iterable[tuple[str, str]]:
+    ordered = sorted(set(names))
+    for idx, left in enumerate(ordered):
+        for right in ordered[idx + 1 : idx + 1 + window]:
+            yield left, right
+
+
 def footprint_family_sets(footprints: Iterable[Footprint]) -> dict[str, set[str]]:
     output: dict[str, set[str]] = {}
     for footprint in footprints:
@@ -195,9 +306,26 @@ def downstream_users(records: Iterable[DeclarationRecord]) -> dict[str, set[str]
 def token_jaccard(left: str, right: str) -> float:
     left_tokens = set(tokenize_statement(left))
     right_tokens = set(tokenize_statement(right))
+    return token_jaccard_sets(left_tokens, right_tokens)
+
+
+def token_jaccard_sets(left_tokens: set[str], right_tokens: set[str]) -> float:
     if not left_tokens and not right_tokens:
         return 1.0
     return len(left_tokens & right_tokens) / max(1, len(left_tokens | right_tokens))
+
+
+def statement_features(records: Iterable[DeclarationRecord]) -> dict[str, dict[str, object]]:
+    features: dict[str, dict[str, object]] = {}
+    for record in records:
+        tokens = set(tokenize_statement(record.statement))
+        identifier_tokens = [token for token in tokens if token.isidentifier()]
+        features[record.name] = {
+            "tokens": tokens,
+            "shape": statement_shape(record.statement),
+            "head": sorted(identifier_tokens)[0] if identifier_tokens else "",
+        }
+    return features
 
 
 def statement_head(statement: str) -> str:
@@ -211,6 +339,10 @@ def signal_counts(pairs: Iterable[StatementPair] | Iterable[ContrastiveExample])
         signal = item.signal if isinstance(item, StatementPair) else item.positive_signal
         counts[signal] += 1
     return counts
+
+
+def signal_count(pairs: Iterable[StatementPair], signal: str) -> int:
+    return sum(1 for pair in pairs if pair.signal == signal)
 
 
 def add_pair(
@@ -229,3 +361,21 @@ def add_pair(
         return
     seen.add(key)
     pairs.append(StatementPair(ordered[0], ordered[1], signal, strength))
+
+
+def add_limited_pair(
+    pairs: list[StatementPair],
+    seen: set[tuple[str, str, str]],
+    signal_limits: Counter[str],
+    left: str,
+    right: str,
+    signal: str,
+    strength: float,
+    limit: int,
+) -> None:
+    if signal_limits[signal] >= limit:
+        return
+    before = len(pairs)
+    add_pair(pairs, seen, left, right, signal, strength)
+    if len(pairs) > before:
+        signal_limits[signal] += 1

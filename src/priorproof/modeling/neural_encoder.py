@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Sequence
 
 from ..data.models import DeclarationRecord
 from .contrastive import ContrastiveExample
@@ -32,12 +32,42 @@ class NeuralStatementEncoder:
     def __init__(self, model_dir: str | Path) -> None:
         SentenceTransformer = import_sentence_transformer()
         self.model = SentenceTransformer(str(model_dir))
+        self._cache: dict[str, list[float]] = {}
 
     def encode(self, record: DeclarationRecord | str) -> list[float]:
-        statement = record.statement if isinstance(record, DeclarationRecord) else record
-        vector = self.model.encode([statement], normalize_embeddings=True)[0]
-        return [float(value) for value in vector]
+        return self.encode_many([record])[0]
 
+    def encode_many(
+        self,
+        records: Sequence[DeclarationRecord | str],
+        batch_size: int = 128,
+    ) -> list[list[float]]:
+        statements = [
+            record.statement if isinstance(record, DeclarationRecord) else record
+            for record in records
+        ]
+        missing = [statement for statement in dict.fromkeys(statements) if statement not in self._cache]
+        if missing:
+            vectors = self.model.encode(
+                missing,
+                batch_size=batch_size,
+                normalize_embeddings=True,
+                show_progress_bar=len(missing) > 4096,
+            )
+            if len(missing) <= 4096:
+                encoded = [[float(value) for value in vector] for vector in vectors]
+                for statement, vector in zip(missing, encoded):
+                    self._cache[statement] = vector
+            else:
+                transient = dict(zip(missing, vectors))
+                result = []
+                for statement in statements:
+                    if statement in self._cache:
+                        result.append(self._cache[statement])
+                    else:
+                        result.append(transient[statement])
+                return result
+        return [self._cache[statement] for statement in statements]
 
 def load_neural_statement_encoder(path: str | Path) -> NeuralStatementEncoder:
     source = Path(path)

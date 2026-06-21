@@ -4,7 +4,13 @@ import argparse
 from pathlib import Path
 
 from priorproof.data.io import write_jsonl
-from priorproof.corpus.pipeline import load_declarations, load_footprints, load_snapshots, score_with_retrieval_prior
+from priorproof.corpus.pipeline import (
+    build_retrieval_prior_contexts,
+    load_declarations,
+    load_footprints,
+    load_snapshots,
+    score_retrieval_prior_contexts,
+)
 from priorproof.modeling.prior import PriorConfig
 from priorproof.cli.encoder_args import add_encoder_args, load_encoder_selection
 
@@ -34,17 +40,17 @@ def main() -> None:
     declarations = load_declarations(args.declarations)
     footprints = load_footprints(args.footprints)
     snapshots = load_snapshots(args.snapshots)
-    encoder, encoders_by_snapshot = load_encoder_selection(args, footprints)
+    encoder, encoders_by_snapshot = load_encoder_selection(args, footprints, snapshots)
+    contexts, footprints_by_decl = build_retrieval_prior_contexts(
+        declarations,
+        footprints,
+        encoder,
+        encoders_by_snapshot=encoders_by_snapshot,
+        k=args.k,
+        snapshots=snapshots,
+    )
     for name, config in ABLATIONS.items():
-        scores, priors = score_with_retrieval_prior(
-            declarations,
-            footprints,
-            encoder,
-            encoders_by_snapshot=encoders_by_snapshot,
-            config=config,
-            k=args.k,
-            snapshots=snapshots,
-        )
+        scores, priors = score_retrieval_prior_contexts(contexts, footprints_by_decl, config=config)
         write_jsonl(out_dir / f"{name}_scores.jsonl", scores)
         write_jsonl(out_dir / f"{name}_priors.jsonl", priors)
 

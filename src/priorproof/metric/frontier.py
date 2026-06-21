@@ -17,6 +17,7 @@ def established_frontier(
     filtered_dependencies: tuple[Dependency, ...],
     redundant_raw_names: set[str] | None = None,
     min_family_support: int = 5,
+    supports: dict[str, int] | None = None,
 ) -> Footprint:
     """Unfold proof-local dependencies until established machinery is reached."""
 
@@ -28,8 +29,9 @@ def established_frontier(
         )
 
     unique_frontier = sorted(set(frontier_names))
-    all_pre_t_deps = [dep for name, dep in dependency_lookup.items() if reuse_counts.get(name, 0) > 0]
-    supports = family_supports(all_pre_t_deps)
+    if supports is None:
+        all_pre_t_deps = [dep for name, dep in dependency_lookup.items() if reuse_counts.get(name, 0) > 0]
+        supports = family_supports(all_pre_t_deps)
     items: list[FootprintItem] = []
     for raw_name in unique_frontier:
         dep = dependency_lookup.get(raw_name, Dependency(name=raw_name))
@@ -75,4 +77,3 @@ def _expand_to_frontier(
         else:
             stack.extend(sorted(children))
     return frontier
-

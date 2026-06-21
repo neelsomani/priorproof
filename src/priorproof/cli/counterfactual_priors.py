@@ -4,10 +4,10 @@ import argparse
 import random
 from pathlib import Path
 
-from priorproof.cli.encoder_args import add_encoder_args, load_encoder_selection
+from priorproof.cli.encoder_args import add_encoder_args, validate_encoder_selection
 from priorproof.data.io import write_jsonl
 from priorproof.corpus.pipeline import load_declarations, load_footprints, load_snapshots
-from priorproof.modeling.prior import PriorConfig, build_hierarchical_prior
+from priorproof.modeling.prior import PriorConfig, build_hierarchical_prior, build_prior_count_state
 from priorproof.modeling.retriever import RetrievalHit
 from priorproof.metric.scoring import score_footprint
 
@@ -31,10 +31,12 @@ def main() -> None:
     declarations = load_declarations(args.declarations)
     footprints = load_footprints(args.footprints)
     snapshots = load_snapshots(args.snapshots)
-    load_encoder_selection(args, footprints)
+    validate_encoder_selection(args, footprints, snapshots)
     by_name = {record.name: record for record in declarations}
     by_snapshot = {snapshot.snapshot_id: snapshot for snapshot in snapshots}
     footprints_by_decl = {footprint.declaration: footprint for footprint in footprints}
+    count_states = {}
+    pre_t_records_by_snapshot = {}
     scores = []
     priors = []
     for footprint in footprints:
@@ -42,18 +44,33 @@ def main() -> None:
         snapshot = by_snapshot.get(footprint.snapshot_id)
         if target is None or snapshot is None:
             continue
-        pre_t_records = [
-            by_name[name]
-            for name in snapshot.declarations
-            if name in by_name and name in footprints_by_decl
-        ]
+        if footprint.snapshot_id not in pre_t_records_by_snapshot:
+            pre_t_records_by_snapshot[footprint.snapshot_id] = [
+                by_name[name]
+                for name in snapshot.declarations
+                if name in by_name and name in footprints_by_decl
+            ]
+            count_states[footprint.snapshot_id] = build_prior_count_state(
+                pre_t_records_by_snapshot[footprint.snapshot_id],
+                footprints_by_decl,
+            )
+        pre_t_records = pre_t_records_by_snapshot[footprint.snapshot_id]
+        if not pre_t_records:
+            continue
         pool = [record for record in pre_t_records if record.namespace != target.namespace] or pre_t_records
         sampled = rng.sample(pool, k=min(args.k, len(pool))) if pool else []
         hits = [
             RetrievalHit(name=record.name, score=0.0, module=record.module, namespace=record.namespace)
             for record in sampled
         ]
-        prior = build_hierarchical_prior(target, pre_t_records, footprints_by_decl, hits, PriorConfig())
+        prior = build_hierarchical_prior(
+            target,
+            pre_t_records,
+            footprints_by_decl,
+            hits,
+            PriorConfig(),
+            count_state=count_states[footprint.snapshot_id],
+        )
         score = score_footprint(footprint, prior, flags=("counterfactual_retrieval",))
         scores.append(score.to_json())
         priors.append(

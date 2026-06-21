@@ -24,6 +24,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--namespace-symbol-jaccard-min", type=float, default=0.35)
     parser.add_argument("--lexical-negative-jaccard-min", type=float, default=0.25)
     parser.add_argument("--hard-negatives-per-pair", type=int, default=4)
+    parser.add_argument("--max-pairs-per-signal", type=int, default=50_000)
+    parser.add_argument("--bucket-window", type=int, default=16)
     return parser.parse_args()
 
 
@@ -51,6 +53,8 @@ def main() -> None:
         namespace_symbol_jaccard_min=args.namespace_symbol_jaccard_min,
         lexical_negative_jaccard_min=args.lexical_negative_jaccard_min,
         hard_negatives_per_pair=args.hard_negatives_per_pair,
+        max_pairs_per_signal=args.max_pairs_per_signal,
+        bucket_window=args.bucket_window,
     )
     examples = mine_contrastive_examples(records, footprints, config)
     write_jsonl(Path(args.out_examples), examples)

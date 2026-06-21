@@ -37,14 +37,15 @@ def main() -> None:
         str(row["declaration"]): dict(row["prior"])
         for row in read_jsonl(args.priors)
     }
+    predicted_footprints = [footprint for footprint in first_footprints if footprint.declaration in priors]
     scores_by_threshold: dict[int, list[NoveltyScore]] = {}
     for path in args.scores:
         scores = [score_from_json(row) for row in read_jsonl(path)]
         if scores:
             scores_by_threshold[scores[0].threshold] = scores
     report = {
-        "chronological_prediction": chronological_prediction_test(first_footprints, priors),
-        "redundancy_detection": redundancy_summary(first_footprints),
+        "chronological_prediction": chronological_prediction_test(predicted_footprints, priors),
+        "redundancy_detection": redundancy_summary(predicted_footprints),
         "backoff_depth_decorrelation": backoff_depth_decorrelation(
             score for scores in scores_by_threshold.values() for score in scores
         ),
@@ -61,7 +62,7 @@ def main() -> None:
             str(row["declaration"]): dict(row["prior"])
             for row in read_jsonl(args.counterfactual_priors)
         }
-        report["parametric_leakage_probe"] = parametric_leakage_probe(priors, counterfactual, first_footprints)
+        report["parametric_leakage_probe"] = parametric_leakage_probe(priors, counterfactual, predicted_footprints)
     if args.rater_responses:
         rater_rows = list(read_jsonl(args.rater_responses))
         report["rater_agreement"] = agreement_report(rater_rows)

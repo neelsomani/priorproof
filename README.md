@@ -73,6 +73,7 @@ Run:
 ```bash
 priorproof-make-snapshot-manifest \
   --commits configs/snapshot_commits.example.json \
+  --mathlib-repo external/mathlib4 \
   --out artifacts/extraction/manifest.json
 
 # The proof-term extractor expects Lean/Lake from Mathlib's lean-toolchain on PATH.
@@ -257,11 +258,32 @@ priorproof-train-neural-encoder \
   --epochs 1 \
   --batch-size 64
 
-# After training one encoder per scoring snapshot, create a JSON map:
-# {
-#   "2024Q1": "artifacts/encoder/neural_t5_2024Q1",
-#   "2024Q2": "artifacts/encoder/neural_t5_2024Q2"
-# }
+priorproof-build-contrastive-data \
+  --declarations data/declarations.jsonl \
+  --footprints artifacts/corpus/footprints_t5.jsonl \
+  --snapshots artifacts/corpus/snapshots.json \
+  --train-before-snapshot 2024Q2 \
+  --out-examples artifacts/encoder/contrastive_examples_t5_2024Q2.jsonl \
+  --out-report artifacts/encoder/contrastive_report_t5_2024Q2.json
+
+priorproof-train-neural-encoder \
+  --declarations data/declarations.jsonl \
+  --examples artifacts/encoder/contrastive_examples_t5_2024Q2.jsonl \
+  --base-model sentence-transformers/all-MiniLM-L6-v2 \
+  --out-dir artifacts/encoder/neural_t5_2024Q2 \
+  --epochs 1 \
+  --batch-size 64
+
+python3 - <<'PY'
+import json
+from pathlib import Path
+
+Path("artifacts/encoder").mkdir(parents=True, exist_ok=True)
+Path("artifacts/encoder/encoder_map_t5.json").write_text(json.dumps({
+    "2024Q1": "artifacts/encoder/neural_t5_2024Q1",
+    "2024Q2": "artifacts/encoder/neural_t5_2024Q2",
+}, indent=2) + "\n")
+PY
 
 priorproof-fit-prior \
   --declarations data/declarations.jsonl \
@@ -275,9 +297,12 @@ priorproof-score \
   --footprints artifacts/corpus/footprints_t5.jsonl \
   --snapshots artifacts/corpus/snapshots.json \
   --encoder-map artifacts/encoder/encoder_map_t5.json \
+  --prior-grid artifacts/prior_grid_t5.json \
   --out-scores artifacts/scores_t5.jsonl \
   --out-priors artifacts/priors_t5.jsonl
 ```
+
+The first snapshot in this example (`2023Q4`) has no earlier mathlib declarations in the manifest, so prior fitting and scoring skip it. The encoder map only needs entries for scoreable snapshots with a non-empty pre-time corpus.
 
 The cheaper frozen-early shortcut is allowed only after it has a stability artifact. Train the earliest-slice encoder and the per-bin comparison encoders, then run:
 
@@ -286,12 +311,12 @@ priorproof-check-encoder-stability \
   --declarations data/declarations.jsonl \
   --footprints artifacts/corpus/footprints_t5.jsonl \
   --snapshots artifacts/corpus/snapshots.json \
-  --reference-encoder artifacts/encoder/neural_t5_earliest \
+  --reference-encoder artifacts/encoder/neural_t5_2024Q1 \
   --encoder-map artifacts/encoder/encoder_map_t5.json \
   --out artifacts/encoder/stability_t5.json
 ```
 
-If `artifacts/encoder/stability_t5.json` reports `"passed": true`, `priorproof-fit-prior`, `priorproof-score`, `priorproof-ablate`, and `priorproof-counterfactual-priors` may use `--encoder artifacts/encoder/neural_t5_earliest --allow-shared-encoder`. Without that flag, those commands refuse to use one encoder across multiple snapshots.
+If `artifacts/encoder/stability_t5.json` reports `"passed": true`, `priorproof-fit-prior`, `priorproof-score`, `priorproof-ablate`, and `priorproof-counterfactual-priors` may use `--encoder artifacts/encoder/neural_t5_2024Q1 --allow-shared-encoder`. Without that flag, those commands refuse to use one encoder across multiple snapshots.
 
 Test/check:
 
@@ -329,10 +354,22 @@ priorproof-counterfactual-priors \
   --out-scores artifacts/counterfactual_scores_t5.jsonl \
   --out-priors artifacts/counterfactual_priors_t5.jsonl
 
+for threshold in 3 8 13; do
+  priorproof-score \
+    --declarations data/declarations.jsonl \
+    --footprints artifacts/corpus/footprints_t${threshold}.jsonl \
+    --snapshots artifacts/corpus/snapshots.json \
+    --encoder-map artifacts/encoder/encoder_map_t5.json \
+    --prior-grid artifacts/prior_grid_t5.json \
+    --out-scores artifacts/scores_t${threshold}.jsonl \
+    --out-priors artifacts/priors_t${threshold}.jsonl
+done
+
 priorproof-validate \
   --footprints artifacts/corpus/footprints_t3.jsonl artifacts/corpus/footprints_t5.jsonl artifacts/corpus/footprints_t8.jsonl artifacts/corpus/footprints_t13.jsonl \
   --priors artifacts/priors_t5.jsonl \
   --scores artifacts/scores_t3.jsonl artifacts/scores_t5.jsonl artifacts/scores_t8.jsonl artifacts/scores_t13.jsonl \
+  --ablated-scores artifacts/ablations/global_only_scores.jsonl artifacts/ablations/no_module_scores.jsonl artifacts/ablations/no_namespace_scores.jsonl artifacts/ablations/no_retrieval_scores.jsonl \
   --counterfactual-priors artifacts/counterfactual_priors_t5.jsonl \
   --out artifacts/validation_report.json
 

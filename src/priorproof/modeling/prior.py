@@ -32,12 +32,20 @@ class PriorConfig:
         )
 
 
+@dataclass(frozen=True)
+class PriorCountState:
+    namespace_counts: dict[str, Counter[str]]
+    module_counts: dict[str, Counter[str]]
+    global_counts: Counter[str]
+
+
 def build_hierarchical_prior(
     target: DeclarationRecord,
     pre_t_records: list[DeclarationRecord],
     footprints_by_decl: dict[str, Footprint],
     retrieval_hits: list[RetrievalHit],
     config: PriorConfig | None = None,
+    count_state: PriorCountState | None = None,
 ) -> dict[str, float]:
     config = (config or PriorConfig()).normalized()
     available_hits = [hit for hit in retrieval_hits if hit.name in footprints_by_decl]
@@ -45,19 +53,11 @@ def build_hierarchical_prior(
         [footprints_by_decl[hit.name] for hit in available_hits],
         weights=softmax_weights([hit.score for hit in available_hits], config.retrieval_temperature),
     )
-    namespace = family_counts(
-        footprints_by_decl[record.name]
-        for record in pre_t_records
-        if record.namespace == target.namespace and record.name in footprints_by_decl
-    )
-    module = family_counts(
-        footprints_by_decl[record.name]
-        for record in pre_t_records
-        if record.module == target.module and record.name in footprints_by_decl
-    )
-    global_counts = family_counts(
-        footprints_by_decl[record.name] for record in pre_t_records if record.name in footprints_by_decl
-    )
+    if count_state is None:
+        count_state = build_prior_count_state(pre_t_records, footprints_by_decl)
+    namespace = count_state.namespace_counts.get(target.namespace, Counter())
+    module = count_state.module_counts.get(target.module, Counter())
+    global_counts = count_state.global_counts
     families = set(retrieval) | set(namespace) | set(module) | set(global_counts) | {"global"}
     distributions = {
         "retrieval": smooth_distribution(retrieval, families, config.alpha),
@@ -74,6 +74,28 @@ def build_hierarchical_prior(
             + config.global_weight * distributions["global"][family]
         )
     return normalize_distribution(prior)
+
+
+def build_prior_count_state(
+    pre_t_records: list[DeclarationRecord],
+    footprints_by_decl: dict[str, Footprint],
+) -> PriorCountState:
+    namespace_counts: dict[str, Counter[str]] = {}
+    module_counts: dict[str, Counter[str]] = {}
+    global_counts: Counter[str] = Counter()
+    for record in pre_t_records:
+        footprint = footprints_by_decl.get(record.name)
+        if footprint is None:
+            continue
+        counts = family_counts([footprint])
+        namespace_counts.setdefault(record.namespace, Counter()).update(counts)
+        module_counts.setdefault(record.module, Counter()).update(counts)
+        global_counts.update(counts)
+    return PriorCountState(
+        namespace_counts=namespace_counts,
+        module_counts=module_counts,
+        global_counts=global_counts,
+    )
 
 
 def family_counts(footprints: Iterable[Footprint]) -> Counter[str]:

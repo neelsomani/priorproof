@@ -97,18 +97,75 @@ def snapshots_from_manifest(snapshots: Iterable[SnapshotManifestItem], declarati
 
 
 def prepare_mathlib_worktree(repo: Path, worktree: Path, commit: str, *, execute: bool) -> list[str]:
+    repo = repo.resolve()
+    worktree = worktree.resolve()
     commands = [
         f"git -C {shlex.quote(str(repo))} fetch --all --tags",
         f"git -C {shlex.quote(str(repo))} worktree add --detach {shlex.quote(str(worktree))} {shlex.quote(commit)}",
         f"git -C {shlex.quote(str(worktree))} checkout --detach {shlex.quote(commit)}",
     ]
     if execute:
+        worktree.parent.mkdir(parents=True, exist_ok=True)
         run_command(("git", "-C", str(repo), "fetch", "--all", "--tags"))
         if not worktree.exists():
             run_command(("git", "-C", str(repo), "worktree", "add", "--detach", str(worktree), commit))
         else:
             run_command(("git", "-C", str(worktree), "checkout", "--detach", commit))
     return commands
+
+
+def validate_snapshot_commits(repo: Path, snapshots: Iterable[SnapshotManifestItem]) -> None:
+    repo = repo.resolve()
+    bad_placeholders = [snapshot.snapshot_id for snapshot in snapshots if is_placeholder_commit(snapshot.commit)]
+    if bad_placeholders:
+        raise ValueError(
+            "Snapshot manifest contains placeholder commits for "
+            f"{bad_placeholders}. Regenerate it with "
+            "`priorproof-make-snapshot-manifest --commits configs/snapshot_commits.example.json "
+            "--mathlib-repo external/mathlib4 --out artifacts/extraction/manifest.json`, "
+            "or replace each commit with a real Mathlib commit hash."
+        )
+    unresolved = [
+        (snapshot.snapshot_id, snapshot.commit)
+        for snapshot in snapshots
+        if not git_commit_exists(repo, snapshot.commit)
+    ]
+    if unresolved:
+        formatted = ", ".join(f"{snapshot_id}={commit}" for snapshot_id, commit in unresolved)
+        raise ValueError(f"Snapshot manifest contains commits not present in {repo}: {formatted}")
+
+
+def is_placeholder_commit(commit: str) -> bool:
+    text = commit.strip().lower()
+    return not text or "replace-with" in text or text in {"placeholder", "todo", "auto"}
+
+
+def git_commit_exists(repo: Path, commit: str) -> bool:
+    completed = subprocess.run(
+        ("git", "-C", str(repo), "cat-file", "-e", f"{commit}^{{commit}}"),
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    return completed.returncode == 0
+
+
+def resolve_commit_at_date(repo: Path, cutoff: date) -> str:
+    completed = subprocess.run(
+        ("git", "-C", str(repo), "rev-list", "-n", "1", f"--before={cutoff.isoformat()} 23:59:59", "HEAD"),
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    if completed.returncode != 0:
+        raise RuntimeError(
+            f"Could not resolve Mathlib commit before {cutoff.isoformat()}\n"
+            f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}"
+        )
+    commit = completed.stdout.strip()
+    if not commit:
+        raise ValueError(f"No Mathlib commit found before {cutoff.isoformat()} in {repo}")
+    return commit
 
 
 def run_extractor_command(command: ExtractorCommand, *, execute: bool) -> None:

@@ -23,6 +23,7 @@ class ProofTermExtractorConfig:
 
 def extract_proof_terms(config: ProofTermExtractorConfig) -> None:
     config.out.parent.mkdir(parents=True, exist_ok=True)
+    build_imports(config)
     with tempfile.TemporaryDirectory(prefix="priorproof-lean-") as tmp:
         script = Path(tmp) / "PriorProofExtract.lean"
         script.write_text(LEAN_EXTRACTOR, encoding="utf-8")
@@ -43,6 +44,37 @@ def extract_proof_terms(config: ProofTermExtractorConfig) -> None:
             )
 
 
+def build_imports(config: ProofTermExtractorConfig) -> None:
+    command = lake_build_command(config)
+    if command is None:
+        return
+    completed = subprocess.run(
+        command,
+        cwd=str(config.repo),
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    if completed.returncode != 0:
+        display = " ".join(shlex.quote(part) for part in command)
+        raise RuntimeError(
+            f"Failed to build Lean imports before proof-term extraction ({completed.returncode}): {display}\n"
+            f"stdout:\n{completed.stdout}\n"
+            f"stderr:\n{completed.stderr}"
+        )
+
+
+def lake_build_command(config: ProofTermExtractorConfig) -> tuple[str, ...] | None:
+    if not config.imports:
+        return None
+    if config.lean_command:
+        if config.lean_command[0] != "lake":
+            return None
+    elif not shutil.which("lake"):
+        return None
+    return ("lake", "build", *config.imports)
+
+
 def extractor_command(config: ProofTermExtractorConfig, script: Path) -> tuple[str, ...]:
     if config.lean_command:
         base = config.lean_command
@@ -59,6 +91,7 @@ def extractor_command(config: ProofTermExtractorConfig, script: Path) -> tuple[s
         *base,
         "--run",
         str(script),
+        "--",
         "--out",
         str(config.out),
         "--commit",
@@ -106,7 +139,7 @@ partial def parseArgs : List String → ExtractConfig → Except String ExtractC
 
 def moduleNameOf? (env : Environment) (name : Name) : Option Name := do
   let idx ← env.getModuleIdxFor? name
-  env.header.moduleNames[idx]?
+  env.header.moduleNames[idx.toNat]?
 
 def namespaceOf (name : Name) : String :=
   match name with
@@ -114,11 +147,14 @@ def namespaceOf (name : Name) : String :=
   | .str p _ => if p.isAnonymous then "" else p.toString
   | .num p _ => if p.isAnonymous then "" else p.toString
 
+def hasSubstr (text needle : String) : Bool :=
+  (text.splitOn needle).length > 1
+
 def isPriorProofInternalName (name : Name) : Bool :=
   let text := name.toString
-  text.startsWith "_private" || text.contains "._private" || text.contains ".match_" ||
-    text.contains "._proof_" || text.contains ".proof_" || text.contains "._" ||
-    text.contains ".eq_"
+  text.startsWith "_private" || hasSubstr text "._private" || hasSubstr text ".match_" ||
+    hasSubstr text "._proof_" || hasSubstr text ".proof_" || hasSubstr text "._" ||
+    hasSubstr text ".eq_"
 
 def moduleAllowed (cfg : ExtractConfig) (moduleName : Name) : Bool :=
   if cfg.modulePrefixes.isEmpty then
@@ -189,8 +225,8 @@ def theoremRow (cfg : ExtractConfig) (env : Environment) (name : Name) (type val
     ])
   ]
 
-def collectTheorems (cfg : ExtractConfig) (env : Environment) : MetaM (Array Json) := do
-  let mut rows : Array Json := #[]
+def writeTheorems (cfg : ExtractConfig) (env : Environment) (handle : IO.FS.Handle) : MetaM Nat := do
+  let mut count := 0
   for i in [:env.header.moduleNames.size] do
     let moduleName := env.header.moduleNames[i]!
     if moduleAllowed cfg moduleName then
@@ -202,14 +238,11 @@ def collectTheorems (cfg : ExtractConfig) (env : Environment) : MetaM (Array Jso
         let info := moduleData.constants[j]!
         match info with
         | .thmInfo val =>
-            rows := rows.push (← theoremRow cfg env name val.type val.value)
+            let row ← theoremRow cfg env name val.type val.value
+            handle.putStrLn (Json.compress row)
+            count := count + 1
         | _ => pure ()
-  return rows.qsort fun left right => Lean.Json.compress left < Lean.Json.compress right
-
-def writeJsonl (path : System.FilePath) (rows : Array Json) : IO Unit := do
-  let handle ← IO.FS.Handle.mk path IO.FS.Mode.write
-  for row in rows do
-    handle.putStrLn (Json.compress row)
+  return count
 
 unsafe def main (args : List String) : IO UInt32 := do
   let cfg ← match parseArgs args {} with
@@ -220,9 +253,9 @@ unsafe def main (args : List String) : IO UInt32 := do
   let opts := Options.empty.set `maxHeartbeats (0 : Nat)
   let imports := cfg.imports.map fun module => ({ module := module } : Import)
   let env ← importModules imports opts 0
-  let rows ← (Meta.MetaM.run' (collectTheorems cfg env)).toIO'
+  let handle ← IO.FS.Handle.mk cfg.out IO.FS.Mode.write
+  let (_, _, _) ← (writeTheorems cfg env handle).toIO
     { fileName := "<priorproof-extractor>", fileMap := default, options := opts, maxHeartbeats := 0 }
     { env := env }
-  writeJsonl cfg.out rows
   return 0
 '''
