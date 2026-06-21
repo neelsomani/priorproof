@@ -2,11 +2,17 @@ from __future__ import annotations
 
 from collections import Counter
 from datetime import date
+from pathlib import Path
 
 from priorproof.metric.filtering import DependencyFilter
 from priorproof.metric.frontier import established_frontier
 from priorproof.data.models import DeclarationRecord, Dependency, Snapshot
-from priorproof.metric.redundancy import canonical_statement, detect_redundant_subterms
+from priorproof.corpus.pipeline import build_footprints, load_declarations
+from priorproof.metric.redundancy import (
+    canonical_statement,
+    detect_redundant_subterms,
+    exact_statement_wrapper_flags,
+)
 from priorproof.metric.scoring import score_footprint
 
 
@@ -46,6 +52,71 @@ def test_redundancy_matches_pre_t_statement() -> None:
     hits = detect_redundant_subterms(target, [prior])
     assert hits[0].matched_declaration == "priorLemma"
     assert hits[0].raw_dependencies == ("hardWay",)
+
+
+def test_redundancy_matches_normalized_conclusion_key() -> None:
+    prior = DeclarationRecord(
+        name="priorLemma",
+        statement="forall x, x = x",
+        proof_date=date(2024, 1, 1),
+        module="Mathlib.Init",
+        namespace="Mathlib",
+        commit="a",
+    )
+    target = DeclarationRecord(
+        name="target",
+        statement="True",
+        proof_date=date(2024, 4, 1),
+        module="Mathlib.Init",
+        namespace="Mathlib",
+        commit="b",
+        subterms=(
+            {
+                "id": "s1",
+                "conclusion": "ignored pretty text",
+                "normalized_conclusion": "∀ y, y = y",
+                "dependencies": ["hardWay"],
+            },
+        ),
+    )
+    hits = detect_redundant_subterms(target, [prior])
+    assert hits[0].matched_declaration == "priorLemma"
+    assert hits[0].mode == "normalized_statement"
+
+
+def test_redundancy_matches_whole_proof_exact_statement_wrapper() -> None:
+    prior = DeclarationRecord(
+        name="priorLemma",
+        statement="forall x, x = x",
+        proof_date=date(2024, 1, 1),
+        module="Mathlib.Init",
+        namespace="Mathlib",
+        commit="a",
+    )
+    target = DeclarationRecord(
+        name="target",
+        statement="∀ y, y = y",
+        proof_date=date(2024, 4, 1),
+        module="Mathlib.Init",
+        namespace="Mathlib",
+        commit="b",
+        dependencies=(dep("priorLemma"),),
+    )
+    hits = exact_statement_wrapper_flags(target, {canonical_statement(prior.statement): [prior]})
+    assert hits[0].matched_declaration == "priorLemma"
+    assert hits[0].mode == "by_exact_statement"
+
+
+def test_rederive_fixture_fires_redundancy_detector() -> None:
+    fixture = Path(__file__).parent / "fixtures" / "rederive_redundancy.jsonl"
+    footprints = build_footprints(load_declarations(fixture), snapshots=None, threshold=1, min_family_support=1)
+    hits = {
+        footprint.declaration: footprint.redundant_subterms
+        for footprint in footprints
+        if footprint.redundant_subterms
+    }
+    assert hits["Mathlib.trig_identity_exact_copy"][0]["mode"] == "by_exact_statement"
+    assert hits["Mathlib.trig_identity_rederived_via_euler"][0]["matched_declaration"] == "Mathlib.trig_identity"
 
 
 def test_frontier_unfolds_until_reuse_threshold() -> None:
@@ -96,4 +167,3 @@ def test_score_uses_weighted_surprisal() -> None:
     score = score_footprint(footprint, {footprint.items[0].family: 0.5})
     assert score.surprisal > 0
     assert score.mean_item_surprisal > 0
-

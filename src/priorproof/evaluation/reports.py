@@ -53,22 +53,45 @@ def parametric_leakage_probe(
     normal_priors: dict[str, dict[str, float]],
     counterfactual_priors: dict[str, dict[str, float]],
     footprints: Iterable[Footprint],
-) -> list[dict[str, float | str]]:
+    retrieval_hit_counts: dict[str, int] | None = None,
+) -> dict[str, object]:
     rows: list[dict[str, float | str]] = []
+    retrieval_hit_counts = retrieval_hit_counts or {}
     for footprint in footprints:
         normal = normal_priors.get(footprint.declaration, {})
         counterfactual = counterfactual_priors.get(footprint.declaration, {})
         normal_ll = footprint_log_prob(footprint, normal)
         counter_ll = footprint_log_prob(footprint, counterfactual)
+        retrieval_hit_count = retrieval_hit_counts.get(footprint.declaration, 0)
         rows.append(
             {
                 "declaration": footprint.declaration,
                 "normal_log_prob": normal_ll,
                 "counterfactual_log_prob": counter_ll,
                 "retrieval_sensitivity": normal_ll - counter_ll,
+                "retrieval_hit_count": float(retrieval_hit_count),
+                "retrieval_nonempty": bool(retrieval_hit_count > 0),
             }
         )
-    return rows
+    nonempty_rows = [row for row in rows if row["retrieval_nonempty"]]
+    return {
+        "all": leakage_sensitivity_summary(rows),
+        "retrieval_nonempty": leakage_sensitivity_summary(nonempty_rows),
+        "retrieval_empty": leakage_sensitivity_summary([row for row in rows if not row["retrieval_nonempty"]]),
+        "rows": rows,
+    }
+
+
+def leakage_sensitivity_summary(rows: list[dict[str, float | str]]) -> dict[str, float]:
+    values = [float(row["retrieval_sensitivity"]) for row in rows]
+    abs_values = [abs(value) for value in values]
+    return {
+        "n": float(len(values)),
+        "mean_sensitivity": mean(values) if values else float("nan"),
+        "mean_abs_sensitivity": mean(abs_values) if abs_values else float("nan"),
+        "min_sensitivity": min(values) if values else float("nan"),
+        "max_sensitivity": max(values) if values else float("nan"),
+    }
 
 
 def proof_edit_stability(
@@ -122,6 +145,99 @@ def threshold_sweep_summary(scores_by_threshold: dict[int, list[NoveltyScore]]) 
             }
         )
     return {"thresholds": thresholds, "rank_correlations": comparisons}
+
+
+def threshold_footprint_bucket_diagnostic(
+    footprints_by_threshold: dict[int, list[Footprint]],
+    sample_declaration: str | None = None,
+    max_changed_examples: int = 10,
+) -> dict[str, object]:
+    thresholds = sorted(footprints_by_threshold)
+    by_threshold = {
+        threshold: {footprint.declaration: footprint for footprint in footprints}
+        for threshold, footprints in footprints_by_threshold.items()
+    }
+    if not thresholds:
+        return {
+            "thresholds": [],
+            "sample_declaration": None,
+            "sample_identical_family_buckets": None,
+            "common_declaration_count": 0,
+            "identical_family_bucket_count": 0,
+            "identical_family_bucket_rate": float("nan"),
+            "all_family_buckets_identical": False,
+            "changed_examples": [],
+        }
+    common = set(by_threshold[thresholds[0]])
+    for threshold in thresholds[1:]:
+        common &= set(by_threshold[threshold])
+    common_names = sorted(common)
+    if sample_declaration and sample_declaration not in common:
+        raise ValueError(f"Sample declaration is not present at every threshold: {sample_declaration}")
+
+    summaries = {
+        name: {
+            threshold: family_bucket_signature(by_threshold[threshold][name])
+            for threshold in thresholds
+        }
+        for name in common_names
+    }
+    identical_names = [
+        name
+        for name, threshold_signatures in summaries.items()
+        if len({signature for signature in threshold_signatures.values()}) == 1
+    ]
+    identical_name_set = set(identical_names)
+    changed_names = [name for name in common_names if name not in identical_name_set]
+    selected = sample_declaration or (common_names[0] if common_names else None)
+    return {
+        "thresholds": thresholds,
+        "sample_declaration": selected,
+        "sample_identical_family_buckets": (
+            selected in identical_names if selected is not None else None
+        ),
+        "sample_buckets": (
+            {
+                str(threshold): footprint_bucket_rows(by_threshold[threshold][selected])
+                for threshold in thresholds
+            }
+            if selected is not None
+            else {}
+        ),
+        "common_declaration_count": len(common_names),
+        "identical_family_bucket_count": len(identical_names),
+        "identical_family_bucket_rate": (
+            len(identical_names) / len(common_names) if common_names else float("nan")
+        ),
+        "all_family_buckets_identical": len(common_names) == len(identical_names),
+        "changed_examples": [
+            {
+                "declaration": name,
+                "thresholds": {
+                    str(threshold): footprint_bucket_rows(by_threshold[threshold][name])
+                    for threshold in thresholds
+                },
+            }
+            for name in changed_names[:max_changed_examples]
+        ],
+    }
+
+
+def family_bucket_signature(footprint: Footprint) -> tuple[tuple[str, str], ...]:
+    return tuple(sorted((item.raw_name, item.family) for item in footprint.items))
+
+
+def footprint_bucket_rows(footprint: Footprint) -> list[dict[str, object]]:
+    return [
+        {
+            "raw_name": item.raw_name,
+            "family": item.family,
+            "support": item.support,
+            "backoff_depth": item.backoff_depth,
+            "weight": item.weight,
+        }
+        for item in sorted(footprint.items, key=lambda item: (item.family, item.raw_name))
+    ]
 
 
 def neighbor_stability(

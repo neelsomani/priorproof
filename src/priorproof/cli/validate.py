@@ -13,6 +13,7 @@ from priorproof.evaluation.reports import (
     chronological_prediction_test,
     metric_vs_rater_consensus,
     parametric_leakage_probe,
+    threshold_footprint_bucket_diagnostic,
     redundancy_summary,
     threshold_sweep_summary,
 )
@@ -26,16 +27,30 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--ablated-scores", nargs="*", default=[], help="Optional ablated score JSONL files.")
     parser.add_argument("--counterfactual-priors", help="Optional counterfactual prior JSONL for leakage probe.")
     parser.add_argument("--rater-responses", help="Optional JSONL rows with pair_id, left, right, and choice.")
+    parser.add_argument(
+        "--threshold-diagnostic-declaration",
+        help="Optional declaration to use for the threshold footprint bucket diagnostic.",
+    )
     parser.add_argument("--out", required=True)
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    first_footprints = load_footprints(args.footprints[0])
+    footprints_by_threshold: dict[int, list] = {}
+    for path in args.footprints:
+        footprints = load_footprints(path)
+        if footprints:
+            footprints_by_threshold[footprints[0].threshold] = footprints
+    first_footprints = next(iter(footprints_by_threshold.values()), [])
+    prior_rows = list(read_jsonl(args.priors))
     priors = {
         str(row["declaration"]): dict(row["prior"])
-        for row in read_jsonl(args.priors)
+        for row in prior_rows
+    }
+    retrieval_hit_counts = {
+        str(row["declaration"]): len(row.get("retrieval_hits", []))
+        for row in prior_rows
     }
     predicted_footprints = [footprint for footprint in first_footprints if footprint.declaration in priors]
     scores_by_threshold: dict[int, list[NoveltyScore]] = {}
@@ -49,7 +64,13 @@ def main() -> None:
         "backoff_depth_decorrelation": backoff_depth_decorrelation(
             score for scores in scores_by_threshold.values() for score in scores
         ),
-        "threshold_sweep": threshold_sweep_summary(scores_by_threshold),
+        "threshold_sweep": {
+            **threshold_sweep_summary(scores_by_threshold),
+            "footprint_bucket_diagnostic": threshold_footprint_bucket_diagnostic(
+                footprints_by_threshold,
+                sample_declaration=args.threshold_diagnostic_declaration,
+            ),
+        },
     }
     if args.ablated_scores:
         base_scores = {score.declaration: score for score in next(iter(scores_by_threshold.values()), [])}
@@ -62,7 +83,12 @@ def main() -> None:
             str(row["declaration"]): dict(row["prior"])
             for row in read_jsonl(args.counterfactual_priors)
         }
-        report["parametric_leakage_probe"] = parametric_leakage_probe(priors, counterfactual, predicted_footprints)
+        report["parametric_leakage_probe"] = parametric_leakage_probe(
+            priors,
+            counterfactual,
+            predicted_footprints,
+            retrieval_hit_counts=retrieval_hit_counts,
+        )
     if args.rater_responses:
         rater_rows = list(read_jsonl(args.rater_responses))
         report["rater_agreement"] = agreement_report(rater_rows)

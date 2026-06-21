@@ -17,7 +17,12 @@ from ..metric.frontier import established_frontier
 from ..data.io import read_json, read_jsonl, write_json, write_jsonl
 from ..data.models import DeclarationRecord, Dependency, Footprint, Snapshot
 from ..modeling.prior import PriorConfig, PriorCountState, build_hierarchical_prior, build_prior_count_state
-from ..metric.redundancy import build_statement_index, detect_redundant_subterms, exact_wrapper_flags
+from ..metric.redundancy import (
+    build_statement_index,
+    detect_redundant_subterms,
+    exact_statement_wrapper_flags,
+    exact_wrapper_flags,
+)
 from ..modeling.retriever import StatementEmbeddingModel, StatementRetriever
 from ..metric.scoring import score_footprint
 
@@ -96,6 +101,8 @@ def build_footprints(
             detect_redundant_subterms(record, statement_index=state["statement_index"])
         ) + tuple(
             exact_wrapper_flags(record, state["declaration_names"])
+        ) + tuple(
+            exact_statement_wrapper_flags(record, state["statement_index"])
         )
         redundant_raw_names = {name for hit in redundancy_hits for name in hit.raw_dependencies}
         footprint = established_frontier(

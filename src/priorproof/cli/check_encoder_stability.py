@@ -5,6 +5,7 @@ import random
 from pathlib import Path
 
 from priorproof.corpus.pipeline import load_declarations, load_footprints, load_snapshots
+from priorproof.data.models import Footprint, Snapshot
 from priorproof.data.io import read_json, write_json
 from priorproof.modeling.neural_encoder import load_encoder_map, load_neural_statement_encoder
 from priorproof.modeling.retriever import StatementRetriever, neighbor_overlap
@@ -45,13 +46,19 @@ def main() -> None:
     missing = sorted(set(required_encoder_snapshot_ids(footprints, snapshots)) - set(encoders_by_snapshot))
     if missing:
         raise ValueError(f"--encoder-map is missing snapshots: {missing}")
+    encoder_paths = resolved_encoder_paths(mapping)
+    self_comparison_snapshots = self_comparison_snapshot_ids(args.reference_encoder, encoder_paths)
+    all_candidates = stability_candidates(footprints, by_snapshot, set(by_name))
     candidates = [
         footprint
-        for footprint in footprints
-        if footprint.declaration in by_name
-        and footprint.snapshot_id in by_snapshot
-        and by_snapshot[footprint.snapshot_id].declarations
+        for footprint in all_candidates
+        if footprint.snapshot_id not in self_comparison_snapshots
     ]
+    if not candidates:
+        raise ValueError(
+            "No cross-bin stability samples are available after excluding snapshots whose "
+            "encoder path is the same as --reference-encoder."
+        )
     rng = random.Random(args.seed)
     rng.shuffle(candidates)
     sample = candidates[: args.sample_size]
@@ -85,6 +92,8 @@ def main() -> None:
                 "declaration": target.name,
                 "snapshot_id": footprint.snapshot_id,
                 "overlap": overlap,
+                "reference_encoder": str(Path(args.reference_encoder).resolve()),
+                "sliced_encoder": str(encoder_paths[footprint.snapshot_id]),
                 "reference_neighbors": [hit.name for hit in reference_hits],
                 "sliced_neighbors": [hit.name for hit in sliced_hits],
             }
@@ -98,6 +107,9 @@ def main() -> None:
             "k": args.k,
             "sample_size_requested": args.sample_size,
             "sample_size_evaluated": len(overlaps),
+            "candidate_count_before_cross_bin_filter": len(all_candidates),
+            "candidate_count_after_cross_bin_filter": len(candidates),
+            "excluded_self_comparison_snapshot_ids": sorted(self_comparison_snapshots),
             "min_mean_overlap": args.min_mean_overlap,
             "mean_overlap": mean_overlap,
             "min_overlap": min(overlaps) if overlaps else 0.0,
@@ -105,6 +117,33 @@ def main() -> None:
             "rows": rows,
         },
     )
+
+
+def resolved_encoder_paths(mapping: dict[str, object]) -> dict[str, Path]:
+    return {str(snapshot_id): Path(str(path)).resolve() for snapshot_id, path in mapping.items()}
+
+
+def self_comparison_snapshot_ids(reference_encoder: str | Path, encoder_paths: dict[str, Path]) -> set[str]:
+    reference_path = Path(reference_encoder).resolve()
+    return {
+        snapshot_id
+        for snapshot_id, encoder_path in encoder_paths.items()
+        if encoder_path == reference_path
+    }
+
+
+def stability_candidates(
+    footprints: list[Footprint],
+    by_snapshot: dict[str, Snapshot],
+    declaration_names: set[str],
+) -> list[Footprint]:
+    return [
+        footprint
+        for footprint in footprints
+        if footprint.declaration in declaration_names
+        and footprint.snapshot_id in by_snapshot
+        and bool(by_snapshot[footprint.snapshot_id].declarations)
+    ]
 
 
 if __name__ == "__main__":

@@ -7,7 +7,14 @@ from priorproof.data.models import DeclarationRecord, Footprint, FootprintItem
 from priorproof.modeling.prior import PriorConfig, build_hierarchical_prior
 from priorproof.modeling.retriever import StatementRetriever
 from priorproof.metric.scoring import score_footprint
-from priorproof.evaluation.reports import chronological_prediction_test, threshold_sweep_summary
+from priorproof.cli.check_encoder_stability import self_comparison_snapshot_ids, stability_candidates
+from priorproof.data.models import Snapshot
+from priorproof.evaluation.reports import (
+    chronological_prediction_test,
+    parametric_leakage_probe,
+    threshold_footprint_bucket_diagnostic,
+    threshold_sweep_summary,
+)
 
 
 class ToyStatementEncoder:
@@ -65,6 +72,66 @@ def test_validation_summaries() -> None:
     score_high = score_footprint(footprint("a", "family", threshold=8), {"family": 0.8})
     sweep = threshold_sweep_summary({5: [score_low], 8: [score_high]})
     assert sweep["thresholds"] == [5, 8]
+
+
+def test_threshold_bucket_diagnostic_reports_identical_and_changed_buckets() -> None:
+    t3 = [
+        footprint("same", "family", threshold=3),
+        footprint("changed", "family:old", threshold=3),
+    ]
+    t8 = [
+        footprint("same", "family", threshold=8),
+        footprint("changed", "family:new", threshold=8),
+    ]
+    report = threshold_footprint_bucket_diagnostic(
+        {3: t3, 8: t8},
+        sample_declaration="same",
+    )
+    assert report["sample_identical_family_buckets"] is True
+    assert report["all_family_buckets_identical"] is False
+    assert report["identical_family_bucket_count"] == 1
+    assert report["common_declaration_count"] == 2
+    assert report["changed_examples"][0]["declaration"] == "changed"
+
+
+def test_parametric_leakage_probe_summarizes_retrieval_nonempty_rows() -> None:
+    fp_a = footprint("a", "family")
+    fp_b = footprint("b", "family")
+    report = parametric_leakage_probe(
+        normal_priors={"a": {"family": 0.9}, "b": {"family": 0.8}},
+        counterfactual_priors={"a": {"family": 0.3}, "b": {"family": 0.2}},
+        footprints=[fp_a, fp_b],
+        retrieval_hit_counts={"a": 2, "b": 0},
+    )
+    assert report["all"]["n"] == 2.0
+    assert report["retrieval_nonempty"]["n"] == 1.0
+    assert report["retrieval_empty"]["n"] == 1.0
+    assert report["rows"][0]["retrieval_nonempty"] is True
+
+
+def test_stability_candidate_helpers_exclude_self_comparison_bins(tmp_path) -> None:
+    reference = tmp_path / "encoder_a"
+    same = tmp_path / "encoder_a"
+    other = tmp_path / "encoder_b"
+    reference.mkdir()
+    other.mkdir()
+    self_snapshots = self_comparison_snapshot_ids(
+        reference,
+        {"2024Q1": same.resolve(), "2024Q2": other.resolve()},
+    )
+    assert self_snapshots == {"2024Q1"}
+
+    snapshots = {
+        "2024Q1": Snapshot("2024Q1", date(2024, 1, 1), "a", ("prior",)),
+        "2024Q2": Snapshot("2024Q2", date(2024, 4, 1), "b", ("prior",)),
+        "2024Q3": Snapshot("2024Q3", date(2024, 7, 1), "c", ()),
+    }
+    candidates = stability_candidates(
+        [footprint("a", "family", threshold=5), footprint("b", "family", threshold=5)],
+        snapshots,
+        {"a", "b"},
+    )
+    assert [candidate.declaration for candidate in candidates] == ["a", "b"]
 
 
 def test_contrastive_example_mining_from_shared_families_and_hard_negatives() -> None:

@@ -77,7 +77,7 @@ def detect_redundant_subterms(
         conclusion = str(subterm.get("conclusion") or subterm.get("normalized_conclusion") or "")
         if not conclusion:
             continue
-        normalized = str(subterm.get("normalized_conclusion") or canonical_statement(conclusion))
+        normalized = canonical_statement(str(subterm.get("normalized_conclusion") or conclusion))
         candidates = statement_index.get(normalized, [])
         if not candidates:
             continue
@@ -92,6 +92,37 @@ def detect_redundant_subterms(
                 raw_dependencies=tuple(str(name) for name in subterm.get("dependencies", [])),
             )
         )
+    return tuple(hits)
+
+
+def exact_statement_wrapper_flags(
+    target: DeclarationRecord,
+    statement_index: dict[str, list[DeclarationRecord]],
+) -> tuple[RedundancyHit, ...]:
+    """Flag whole-proof wrappers such as `by exact prior_theorem`.
+
+    The proof-term backend always gives us top-level dependencies, even when it
+    cannot recover named subproofs. If a target theorem has the same statement
+    as a pre-time theorem and its proof term depends on that theorem, the proof
+    is an exact library re-use and should not be treated as novel.
+    """
+
+    dependency_names = {dependency.name for dependency in target.dependencies}
+    candidates = statement_index.get(canonical_statement(target.statement), [])
+    hits: list[RedundancyHit] = []
+    for candidate in sorted(candidates, key=lambda item: item.proof_date):
+        if candidate.name == target.name or candidate.name not in dependency_names:
+            continue
+        hits.append(
+            RedundancyHit(
+                subterm_id="proof",
+                conclusion=target.statement,
+                matched_declaration=candidate.name,
+                mode="by_exact_statement",
+                raw_dependencies=(candidate.name,),
+            )
+        )
+        break
     return tuple(hits)
 
 
