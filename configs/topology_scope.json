@@ -1,0 +1,35 @@
+{
+  "name": "topology_metric_compactness_separation",
+  "description": "Paper-facing topology target scope: metric-space, compactness, and separation theorems, with adjacent topology infrastructure retained as support for priors and dependency backoff.",
+  "target_module_prefixes": [
+    "Mathlib.Topology.MetricSpace",
+    "Mathlib.Topology.Compactness",
+    "Mathlib.Topology.Separation"
+  ],
+  "support_module_prefixes": [
+    "Mathlib.Topology.Basic",
+    "Mathlib.Topology.Defs",
+    "Mathlib.Topology.EMetricSpace",
+    "Mathlib.Topology.UniformSpace",
+    "Mathlib.Topology.SubsetProperties",
+    "Mathlib.Topology.Constructions",
+    "Mathlib.Topology.Bornology",
+    "Mathlib.Topology.Maps",
+    "Mathlib.Topology.ContinuousOn",
+    "Mathlib.Topology.Order",
+    "Mathlib.Topology.Bases",
+    "Mathlib.Topology.Inseparable",
+    "Mathlib.Topology.NhdsSet",
+    "Mathlib.Topology.Sets",
+    "Mathlib.Topology.ContinuousFunction",
+    "Mathlib.Topology.Instances",
+    "Mathlib.Topology.Connected",
+    "Mathlib.Topology.Homeomorph",
+    "Mathlib.Topology.GDelta",
+    "Mathlib.Topology.LocallyFinite",
+    "Mathlib.Topology.Clopen",
+    "Mathlib.Topology.Paracompact",
+    "Mathlib.Topology.Algebra"
+  ],
+  "excluded_module_prefixes": []
+}

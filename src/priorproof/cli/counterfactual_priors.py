@@ -5,7 +5,7 @@ import random
 from pathlib import Path
 
 from priorproof.cli.encoder_args import add_encoder_args, validate_encoder_selection
-from priorproof.data.io import write_jsonl
+from priorproof.data.io import read_json, write_jsonl
 from priorproof.corpus.pipeline import load_declarations, load_footprints, load_snapshots
 from priorproof.modeling.prior import PriorConfig, build_hierarchical_prior, build_prior_count_state
 from priorproof.modeling.retriever import RetrievalHit
@@ -20,6 +20,7 @@ def parse_args() -> argparse.Namespace:
     add_encoder_args(parser)
     parser.add_argument("--out-scores", required=True)
     parser.add_argument("--out-priors", required=True)
+    parser.add_argument("--target-declarations", help="Optional JSON list of declaration names to score.")
     parser.add_argument("--k", type=int, default=32)
     parser.add_argument("--seed", type=int, default=29)
     return parser.parse_args()
@@ -35,11 +36,14 @@ def main() -> None:
     by_name = {record.name: record for record in declarations}
     by_snapshot = {snapshot.snapshot_id: snapshot for snapshot in snapshots}
     footprints_by_decl = {footprint.declaration: footprint for footprint in footprints}
+    target_names = load_target_names(args.target_declarations)
     count_states = {}
     pre_t_records_by_snapshot = {}
     scores = []
     priors = []
     for footprint in footprints:
+        if target_names is not None and footprint.declaration not in target_names:
+            continue
         target = by_name.get(footprint.declaration)
         snapshot = by_snapshot.get(footprint.snapshot_id)
         if target is None or snapshot is None:
@@ -84,6 +88,15 @@ def main() -> None:
         )
     write_jsonl(Path(args.out_scores), scores)
     write_jsonl(Path(args.out_priors), priors)
+
+
+def load_target_names(path: str | None) -> set[str] | None:
+    if not path:
+        return None
+    data = read_json(path)
+    if not isinstance(data, list):
+        raise ValueError("--target-declarations must contain a JSON list")
+    return {str(item) for item in data}
 
 
 if __name__ == "__main__":

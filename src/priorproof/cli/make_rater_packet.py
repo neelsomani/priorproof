@@ -10,7 +10,7 @@ from priorproof.cli.validate import score_from_json
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Create blinded pairwise rater packet for footprint nonstandardness.")
+    parser = argparse.ArgumentParser(description="Create blinded pairwise rater packet for proof-route nonstandardness.")
     parser.add_argument("--declarations", required=True)
     parser.add_argument("--scores", required=True)
     parser.add_argument("--out-dir", required=True)
@@ -34,7 +34,7 @@ def main() -> None:
                 "pair_id": pair["pair_id"],
                 "left": {"name": left.name if left else pair["left"], "statement": left.statement if left else ""},
                 "right": {"name": right.name if right else pair["right"], "statement": right.statement if right else ""},
-                "prompt": "Which proof uses a more nonstandard dependency footprint relative to nearby formal proofs?",
+                "prompt": "Which proof uses the less standard mathematical route to its result?",
             }
         )
     write_jsonl(out_dir / "pairs_blinded.jsonl", blinded)
@@ -43,4 +43,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

@@ -18,6 +18,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--out-scores", required=True)
     parser.add_argument("--out-priors", required=True)
     parser.add_argument("--prior-grid", help="Optional prior_grid JSON. Uses its `best` row for scoring parameters.")
+    parser.add_argument("--target-declarations", help="Optional JSON list of declaration names to score.")
     parser.add_argument("--k", type=int, default=32)
     parser.add_argument("--alpha", type=float, default=0.25)
     parser.add_argument("--retrieval-weight", type=float, default=0.55)
@@ -42,6 +43,7 @@ def main() -> None:
         config=config,
         k=args.k,
         snapshots=snapshots,
+        target_names=load_target_names(args.target_declarations),
     )
     write_jsonl(Path(args.out_scores), scores)
     write_jsonl(Path(args.out_priors), priors)
@@ -67,6 +69,15 @@ def prior_config_from_args(args: argparse.Namespace) -> PriorConfig:
         module_weight=args.module_weight,
         global_weight=args.global_weight,
     )
+
+
+def load_target_names(path: str | None) -> set[str] | None:
+    if not path:
+        return None
+    data = read_json(path)
+    if not isinstance(data, list):
+        raise ValueError("--target-declarations must contain a JSON list")
+    return {str(item) for item in data}
 
 
 if __name__ == "__main__":

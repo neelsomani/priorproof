@@ -174,6 +174,7 @@ def score_with_retrieval_prior(
     config: PriorConfig | None = None,
     k: int = 32,
     snapshots: list[Snapshot] | None = None,
+    target_names: set[str] | None = None,
 ) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
     contexts, footprints_by_decl = build_retrieval_prior_contexts(
         declarations,
@@ -182,6 +183,7 @@ def score_with_retrieval_prior(
         encoders_by_snapshot=encoders_by_snapshot,
         k=k,
         snapshots=snapshots,
+        target_names=target_names,
     )
     return score_retrieval_prior_contexts(contexts, footprints_by_decl, config)
 
@@ -193,6 +195,7 @@ def build_retrieval_prior_contexts(
     encoders_by_snapshot: dict[str, StatementEmbeddingModel] | None = None,
     k: int = 32,
     snapshots: list[Snapshot] | None = None,
+    target_names: set[str] | None = None,
 ) -> tuple[list[RetrievalPriorContext], dict[str, Footprint]]:
     if encoder is None and not encoders_by_snapshot:
         raise ValueError("Either encoder or encoders_by_snapshot is required")
@@ -202,6 +205,8 @@ def build_retrieval_prior_contexts(
     scoring_states: dict[str, dict[str, object]] = {}
     contexts: list[RetrievalPriorContext] = []
     for target_name, footprint in footprints_by_decl.items():
+        if target_names is not None and target_name not in target_names:
+            continue
         target = by_name.get(target_name)
         if target is None:
             continue

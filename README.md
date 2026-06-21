@@ -22,7 +22,7 @@ The one residual that no mechanism closes is *diffuse* human-mediated influence:
 
 **What it does not measure.** Footprint surprisal diverges from felt novelty in characterizable ways, each illustrated by a canonical case. *Definitional novelty:* the achievement in Principia's proof of 1+1=2 lives in the construction of number from logic, upstream of any proof term; the metric correctly scores the *proof* of that statement as un-novel and is openly blind to the foundational work, because that novelty resides in definitions, not in the route to the target. *Connection versus node:* the metric scores the surprisal of the premises a proof uses, not of the connections it draws between library areas; some novelty (the analytic proof of infinitude of primes deriving its force from a number-theory↔analysis bridge) is better described as connection-novelty, which we treat as future work rather than claim the node-level metric captures. *Elegance and explanation* are distinct proof virtues studied in the philosophy literature and are not targeted here. Point-in-time scoring handles a fourth case by construction: a result's later simplification does not retroactively lower the surprise its original proof carried, because each proof is scored only against the library predating it.
 
-**Validation.** Mechanical, primarily: (1) chronological prediction — the prior assigns higher likelihood to actually-used premise-families than to random ones; (2) retrieval and smoothing ablations — removing each worsens prediction; (3) parametric-leakage probe — the counterfactual-retrieval test, with sensitivity reported overall and on the retrieval-nonempty subset; (4) paraphrase/proof-edit stability — equivalent minor proof changes do not move the score; (5) redundancy detection — `by exact prior_theorem` and library-re-derivation sub-proofs are flagged, not scored as novel; (6) backoff-depth decorrelation. Then one human check, scoped narrowly: two raters working in the chosen domain compare proof *pairs* on "which uses a more nonstandard dependency footprint relative to nearby formal proofs" — never "which is more original." Inter-rater agreement is both the construct check and the ceiling; the metric is reported against that ceiling, alongside a naive-LLM-judge baseline given the identical prompt.
+**Validation.** Mechanical, primarily: (1) chronological prediction — the prior assigns higher likelihood to actually-used premise-families than to random ones; (2) retrieval and smoothing ablations — removing each worsens prediction; (3) parametric-leakage probe — the counterfactual-retrieval test, with sensitivity reported overall and on the retrieval-nonempty subset; (4) paraphrase/proof-edit stability — equivalent minor proof changes do not move the score; (5) redundancy detection — `by exact prior_theorem` and library-re-derivation sub-proofs are flagged, not scored as novel; (6) backoff-depth decorrelation. Then one human check, scoped narrowly: two raters working in the chosen domain compare proof *pairs* on which proof uses the less standard mathematical route to its result — never "which is more original." Inter-rater agreement is both the construct check and the ceiling; the metric is reported against that ceiling, alongside a naive-LLM-judge baseline given the identical prompt.
 
 **Domain.** One corpus-dense Mathlib area where reuse meaningfully tracks establishment and comparison classes are large enough for stable percentiles, chosen empirically by density.
 
@@ -36,7 +36,7 @@ The one residual that no mechanism closes is *diffuse* human-mediated influence:
 
 **Prior and encoder.** Mine proof-derived contrastive pairs, fine-tune a transformer statement encoder, build the multi-stage retriever over Lean statements, and fit the hierarchical-smoothed retrieval-conditioned prior by chronological log-likelihood. Resolve encoder time-slicing via the neighbor-stability check; run the parametric-leakage probe.
 
-**Validation.** Run all six mechanical tests. Run the threshold sweep with the footprint-bucket diagnostic; only treat it as a sensitivity result when at least some declarations change family buckets across thresholds. Run the canonical-case suite as documented qualitative behavior. Recruit two domain raters; collect 50–100 pairwise comparisons on footprint-nonstandardness; report agreement, ceiling, metric-vs-consensus, and the naive-LLM baseline.
+**Validation.** Run all six mechanical tests. Run the threshold sweep with the footprint-bucket diagnostic; only treat it as a sensitivity result when at least some declarations change family buckets across thresholds. Run the canonical-case suite as documented qualitative behavior. Recruit two domain raters; collect 50–100 pairwise comparisons on which proof uses the less standard mathematical route; report agreement, ceiling, metric-vs-consensus, and the naive-LLM baseline.
 
 ## Quickstart Guide
 
@@ -185,6 +185,22 @@ priorproof-build-corpus \
   --thresholds 3,5,8,13
 ```
 
+For a domain-scoped study, first filter the broad extraction into a corpus plus a target list. The corpus keeps support declarations that may inform the prior; the target list says which declarations should be fit/scored/reported.
+
+```bash
+priorproof-apply-scope \
+  --declarations data/declarations.jsonl \
+  --scope configs/topology_scope.json \
+  --out-declarations data/topology/declarations.jsonl \
+  --out-targets data/topology/targets.json \
+  --report artifacts/topology/scope_report.json
+
+priorproof-build-corpus \
+  --declarations data/topology/declarations.jsonl \
+  --out-dir artifacts/topology/corpus \
+  --thresholds 3,5,8,13
+```
+
 Test/check:
 
 ```bash
@@ -309,6 +325,8 @@ priorproof-score \
   --out-priors artifacts/priors_t5.jsonl
 ```
 
+Omit `--target-declarations` for full-corpus runs. For scoped studies, use the scoped declarations/footprints/snapshots paths and add `--target-declarations data/topology/targets.json` so the support corpus contributes to retrieval and smoothing without becoming part of the reported target set.
+
 The first snapshot in this example (`2023Q4`) has no earlier mathlib declarations in the manifest, so prior fitting and scoring skip it. The encoder map only needs entries for scoreable snapshots with a non-empty pre-time corpus.
 
 The cheaper frozen-early shortcut is allowed only after it has a stability artifact. Train the earliest-slice encoder and the per-bin comparison encoders, then run:
@@ -333,7 +351,7 @@ python3 -m pytest tests/test_encoder_prior_validation.py
 
 ### Validation
 
-Finally, we run mechanical validation summaries, ablations, counterfactual retrieval leakage checks, threshold sweeps, and rater packet generation. The validation report includes `threshold_sweep.footprint_bucket_diagnostic`, which logs one sample declaration's dependency-family buckets at each threshold and reports the corpus-wide rate of identical buckets.
+Finally, we run mechanical validation summaries, ablations, counterfactual retrieval leakage checks, threshold sweeps, canonical-case assembly, rater packet generation, and LLM-baseline request generation. The validation report includes `threshold_sweep.footprint_bucket_diagnostic`, which logs one sample declaration's dependency-family buckets at each threshold and reports the corpus-wide rate of identical buckets.
 
 Relevant files:
 
@@ -341,7 +359,12 @@ Relevant files:
 - `src/priorproof/cli/ablate.py`: retrieval/smoothing ablation artifact generation.
 - `src/priorproof/cli/counterfactual_priors.py`: unrelated-context priors for leakage probes.
 - `src/priorproof/cli/validate.py`: validation report aggregation.
-- `src/priorproof/cli/make_rater_packet.py`: blinded pairwise rater packets.
+- `src/priorproof/cli/make_canonical_cases.py`: hand-picked topology contrast cases with actual scores.
+- `src/priorproof/cli/make_study_packet.py`: combined canonical plus stratified rater/LLM packet.
+- `src/priorproof/cli/make_rater_ui.py`: static blinded rater UI.
+- `src/priorproof/cli/generate_proof_narratives.py`: optional LLM pass that fills missing proof narratives from only the blinded packet.
+- `src/priorproof/cli/run_llm_baseline.py`: LLM baseline request generation and optional execution.
+- `src/priorproof/cli/evaluate_llm_baseline.py`: LLM baseline response scoring against the packet answer key.
 
 Run:
 
@@ -380,11 +403,61 @@ priorproof-validate \
   --counterfactual-priors artifacts/counterfactual_priors_t5.jsonl \
   --out artifacts/validation_report.json
 
-priorproof-rater-packet \
-  --declarations data/declarations.jsonl \
-  --scores artifacts/scores_t5.jsonl \
-  --out-dir artifacts/raters \
-  --n 100
+priorproof-canonical-cases \
+  --case-spec configs/topology_canonical_cases.json \
+  --declarations data/topology/declarations.jsonl \
+  --scores artifacts/topology/scores_t5.jsonl \
+  --footprints artifacts/topology/corpus/footprints_t5.jsonl \
+  --mathlib-repo external/mathlib4 \
+  --out artifacts/topology/canonical_cases.json
+
+priorproof-study-packet \
+  --declarations data/topology/declarations.jsonl \
+  --scores artifacts/topology/scores_t5.jsonl \
+  --footprints artifacts/topology/corpus/footprints_t5.jsonl \
+  --canonical-cases artifacts/topology/canonical_cases.json \
+  --mathlib-repo external/mathlib4 \
+  --stratified-count 64 \
+  --canonical-repeats 3 \
+  --out-dir artifacts/topology/study_packet
+
+priorproof-generate-proof-narratives \
+  --packet artifacts/topology/study_packet/study_packet.json \
+  --out-packet artifacts/topology/study_packet/study_packet_with_narratives.json \
+  --out-dir artifacts/topology/proof_narratives \
+  --model gpt-5-mini \
+  --execute
+
+priorproof-rater-ui \
+  --packet artifacts/topology/study_packet/study_packet_with_narratives.json \
+  --out artifacts/topology/study_packet/rater_ui.html
+
+priorproof-llm-baseline \
+  --packet artifacts/topology/study_packet/study_packet_with_narratives.json \
+  --out-dir artifacts/topology/llm_baseline \
+  --model gpt-5 \
+  --model gpt-5-mini
+
+priorproof-evaluate-llm-baseline \
+  --responses artifacts/topology/llm_baseline/responses.jsonl \
+  --requests artifacts/topology/llm_baseline/requests.jsonl \
+  --answer-key artifacts/topology/study_packet/answer_key.json \
+  --out artifacts/topology/llm_baseline/report.json
+```
+
+For scoped validation runs, pass the same `--target-declarations` file to `priorproof-ablate`, `priorproof-counterfactual-priors`, and every `priorproof-score` invocation used to produce validation inputs.
+
+The public study packet and rater UI intentionally exclude scores, prior probabilities, dependency buckets, and metric-derived explanations. Those fields are kept only in `answer_key.json` and canonical analysis artifacts so human and LLM judgments remain independent. The proof-narrative command reads only the blinded packet. Without `--execute`, it writes narrative requests only; it does not copy the packet forward or invent placeholder prose. `priorproof-rater-ui` and `priorproof-llm-baseline` hard-error unless every side already has a non-empty proof narrative. The LLM baseline command above writes `requests.jsonl` for two models and both prompt strictness levels. Add `--execute` only when `OPENAI_API_KEY` is set and the optional `openai` package is installed; otherwise the artifact is a dry-run request set over the exact blinded rater packet. Run the evaluator after `responses.jsonl` exists; it reports accuracy and invalid/missing-response rates overall, by model, by prompt strictness, and by canonical versus stratified source.
+
+If narratives are generated outside the command, merge them with:
+
+```bash
+priorproof-generate-proof-narratives \
+  --packet artifacts/topology/study_packet/study_packet.json \
+  --responses artifacts/topology/proof_narratives/narrative_responses.jsonl \
+  --out-packet artifacts/topology/study_packet/study_packet_with_narratives.json \
+  --out-dir artifacts/topology/proof_narratives \
+  --model gpt-5-mini
 ```
 
 Test/check:

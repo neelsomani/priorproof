@@ -18,6 +18,7 @@ ml = [
   "datasets>=2.19",
   "accelerate>=1.1",
 ]
+llm = ["openai>=1.0"]
 
 [project.scripts]
 priorproof-build-corpus = "priorproof.cli.build_corpus:main"
@@ -25,6 +26,7 @@ priorproof-make-snapshot-manifest = "priorproof.cli.make_snapshot_manifest:main"
 priorproof-extract-declarations = "priorproof.cli.extract_declarations:main"
 priorproof-proof-term-extract = "priorproof.cli.proof_term_extract:main"
 priorproof-source-scan-extract = "priorproof.cli.source_scan_extract:main"
+priorproof-apply-scope = "priorproof.cli.apply_scope:main"
 priorproof-gate-checks = "priorproof.cli.gate_checks:main"
 priorproof-check-redundancy-fixture = "priorproof.cli.check_redundancy_fixture:main"
 priorproof-score = "priorproof.cli.score_novelty:main"
@@ -36,6 +38,12 @@ priorproof-validate = "priorproof.cli.validate:main"
 priorproof-ablate = "priorproof.cli.ablate:main"
 priorproof-counterfactual-priors = "priorproof.cli.counterfactual_priors:main"
 priorproof-rater-packet = "priorproof.cli.make_rater_packet:main"
+priorproof-canonical-cases = "priorproof.cli.make_canonical_cases:main"
+priorproof-study-packet = "priorproof.cli.make_study_packet:main"
+priorproof-rater-ui = "priorproof.cli.make_rater_ui:main"
+priorproof-generate-proof-narratives = "priorproof.cli.generate_proof_narratives:main"
+priorproof-llm-baseline = "priorproof.cli.run_llm_baseline:main"
+priorproof-evaluate-llm-baseline = "priorproof.cli.evaluate_llm_baseline:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

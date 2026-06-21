@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from priorproof.data.io import write_json
+from priorproof.data.io import read_json, write_json
 from priorproof.corpus.pipeline import (
     build_retrieval_prior_contexts,
     load_declarations,
@@ -22,6 +22,7 @@ def parse_args() -> argparse.Namespace:
     add_encoder_args(parser)
     parser.add_argument("--snapshots", help="Optional snapshots.json. Required for strict start-of-bin leakage discipline.")
     parser.add_argument("--out", required=True)
+    parser.add_argument("--target-declarations", help="Optional JSON list of declaration names to fit on.")
     parser.add_argument("--k", type=int, default=32)
     return parser.parse_args()
 
@@ -39,6 +40,7 @@ def main() -> None:
         encoders_by_snapshot=encoders_by_snapshot,
         k=args.k,
         snapshots=snapshots,
+        target_names=load_target_names(args.target_declarations),
     )
     scored_footprints = [context.footprint for context in contexts]
     candidates = [
@@ -71,6 +73,15 @@ def main() -> None:
             best_ll = ll
             best = row
     write_json(Path(args.out), {"best": best, "grid": rows})
+
+
+def load_target_names(path: str | None) -> set[str] | None:
+    if not path:
+        return None
+    data = read_json(path)
+    if not isinstance(data, list):
+        raise ValueError("--target-declarations must contain a JSON list")
+    return {str(item) for item in data}
 
 
 if __name__ == "__main__":

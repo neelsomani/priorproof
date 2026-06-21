@@ -1,0 +1,138 @@
+{
+  "name": "topology_canonical_cases",
+  "description": "Hand-picked topology contrasts for checking whether footprint novelty agrees with expected proof-nonstandardness contrasts.",
+  "cases": [
+    {
+      "case_id": "compactness_lindelof_image",
+      "title": "Routine Lindelof instance versus image transfer",
+      "theme": "compactness",
+      "left": "isLindelof_univ",
+      "right": "IsLindelof.image_of_continuousOn",
+      "expected_contrast": "right",
+      "interpretation": "The left theorem is essentially the canonical Lindelof-space instance. The right theorem moves through a continuous-on image argument and should expose a less standard footprint.",
+      "left_human_argument": "The proof simply invokes the defining Lindelof-space witness for the whole space. There is no real construction: the theorem packages the class assumption into the statement that the universal set is Lindelof.",
+      "right_human_argument": "The proof starts with a Lindelof set in the domain and a map that is continuous on that set. It pulls an open cover of the image back along the map, uses the Lindelof hypothesis to choose a countable subcover in the domain, and then pushes that countable subcover forward to cover the image."
+    },
+    {
+      "case_id": "compact_cluster_point",
+      "title": "Basic compact cluster point versus infinite-subset cluster point",
+      "theme": "compactness",
+      "left": "IsCompact.exists_clusterPt",
+      "right": "Set.Infinite.exists_accPt_cofinite_inf_principal_of_subset_isCompact",
+      "expected_contrast": "right",
+      "interpretation": "The left statement is a direct compactness/filter cluster-point lemma. The right combines compactness with infinite-set and cofinite-filter machinery.",
+      "left_human_argument": "The proof applies compactness to a filter that is forced to live inside the compact set. Compactness gives a cluster point, and the principal-set bound shows that the cluster point lies in the original set.",
+      "right_human_argument": "The proof turns an infinite subset of a compact set into a cofinite filter on that subset. It then uses compactness to extract a cluster point and checks that the filter really sees infinitely many points from the subset, giving an accumulation point."
+    },
+    {
+      "case_id": "compact_preimage_sigma_compact",
+      "title": "Compact preimage versus sigma-compact equivalence",
+      "theme": "compactness",
+      "left": "Inducing.isCompact_preimage'",
+      "right": "Inducing.isSigmaCompact_iff",
+      "expected_contrast": "right",
+      "interpretation": "The compact-preimage lemma is a local transfer through an inducing map. The sigma-compact equivalence uses a broader countable-union compactness footprint.",
+      "left_human_argument": "The proof uses an inducing map to identify the topology on the source with the topology pulled back from the target. Under that identification, compactness of a target set transfers to compactness of the corresponding preimage.",
+      "right_human_argument": "The proof proves both directions of a sigma-compactness equivalence. It transports countable compact covers across an inducing map, converting compact pieces in one space into compact preimages or images in the other and reassembling the countable union."
+    },
+    {
+      "case_id": "separation_basis_connected_component",
+      "title": "Regular-space basis criterion versus clopen connected components",
+      "theme": "separation",
+      "left": "RegularSpace.of_hasBasis",
+      "right": "connectedComponent_eq_iInter_isClopen",
+      "expected_contrast": "right",
+      "interpretation": "The basis criterion stays inside expected separation-space machinery. The connected-component identity crosses into clopen lattice and compact Hausdorff structure.",
+      "left_human_argument": "The proof shows regularity from a basis criterion: around each point and open neighborhood, it chooses a basis element whose closure stays inside the neighborhood. That local closed-neighborhood refinement is exactly what regularity needs.",
+      "right_human_argument": "The proof identifies the connected component of a point as the intersection of all clopen sets containing it. One inclusion uses that connected components cannot cross a clopen separation; the other uses compact Hausdorff zero-dimensional separation machinery to cut away every point outside the component by a clopen set."
+    },
+    {
+      "case_id": "separation_quotient",
+      "title": "R0 characterization versus Hausdorff separation quotient",
+      "theme": "separation",
+      "left": "r0Space_iff",
+      "right": "SeparationQuotient.t2Space_iff",
+      "expected_contrast": "right",
+      "interpretation": "The R0 characterization is close to the local definitions. The quotient theorem needs more quotient/separation infrastructure.",
+      "left_human_argument": "The proof unfolds the R0 separation condition into the specialization relation. It shows that topologically indistinguishable points have the expected closure behavior, and conversely that the closure behavior recovers the R0 condition.",
+      "right_human_argument": "The proof relates Hausdorffness of the separation quotient to the original separation relation. It reasons through the quotient map, showing that distinct quotient classes can be separated exactly when the original space has the required separation behavior modulo indistinguishability."
+    },
+    {
+      "case_id": "metric_cobounded",
+      "title": "Closed-ball complement containment versus cobounded/cocompact equality",
+      "theme": "metric",
+      "left": "Metric.closedBall_compl_subset_of_mem_cocompact",
+      "right": "Metric.cobounded_eq_cocompact",
+      "expected_contrast": "right",
+      "interpretation": "The closed-ball containment is a local metric filter fact. The equality theorem aligns two large bornological/topological filters.",
+      "left_human_argument": "The proof uses the definition of the cocompact filter and the fact that a closed ball is compact in the available metric context. If a set is eventually outside every compact set, then it is eventually outside the chosen closed ball.",
+      "right_human_argument": "The proof proves equality of the cobounded and cocompact filters in a metric setting. One direction turns bounded complements into compact containment data, and the other direction uses metric balls or closed balls to convert compact complements back into boundedness statements."
+    },
+    {
+      "case_id": "compact_nhds_subcover_between",
+      "title": "Neighborhood subcover versus compact closed separator",
+      "theme": "compactness",
+      "left": "IsCompact.elim_nhds_subcover_nhdsSet",
+      "right": "exists_compact_closed_between",
+      "expected_contrast": "right",
+      "interpretation": "Both are compact-neighborhood statements, but the separator theorem adds local compactness and closed-set interpolation.",
+      "left_human_argument": "The proof starts with compactness and an open-neighborhood assignment around the compact set. Compactness extracts finitely many of those neighborhoods, and the finite subcover is repackaged as a neighborhood-set cover.",
+      "right_human_argument": "The proof uses local compactness to thicken each point of a compact set inside the given open set by a compact neighborhood. A finite compact subcover is chosen, then combined and closed so that it still sits inside the open set while the original compact set lies in its interior."
+    },
+    {
+      "case_id": "lindelof_subset_range",
+      "title": "Hereditary Lindelof subset versus range insertion",
+      "theme": "compactness",
+      "left": "IsHereditarilyLindelof.isLindelof_subset",
+      "right": "Tendsto.isLindelof_insert_range_of_coLindelof",
+      "expected_contrast": "right",
+      "interpretation": "The subset theorem is directly inherited from the hereditary assumption. The range-insertion theorem mixes convergence, ranges, and co-Lindelof structure.",
+      "left_human_argument": "The proof directly applies the hereditary Lindelof hypothesis to the chosen subset. Since every subset of a hereditarily Lindelof space is Lindelof, there is no additional construction.",
+      "right_human_argument": "The proof studies the range of a sequence or net together with a limiting point. It uses the convergence behavior to control the tail of the range and combines that with co-Lindelof information to show the inserted range remains Lindelof."
+    },
+    {
+      "case_id": "metric_dilation_cobounded",
+      "title": "Dilation homeomorphism inverse versus cobounded map",
+      "theme": "metric",
+      "left": "DilationEquiv.toHomeomorph_symm",
+      "right": "DilationEquiv.map_cobounded",
+      "expected_contrast": "right",
+      "interpretation": "The homeomorphism inverse is structural. The cobounded-map theorem connects dilation equivalences to bornological filter behavior.",
+      "left_human_argument": "The proof is structural: a dilation equivalence already gives a homeomorphism, and the inverse homeomorphism is obtained by applying the same construction to the inverse equivalence.",
+      "right_human_argument": "The proof shows that a dilation equivalence preserves the cobounded filter. It uses the metric scaling control to send bounded sets to bounded sets and then lifts that boundedness preservation to a statement about the filter at infinity."
+    },
+    {
+      "case_id": "compact_to_sigma_compact",
+      "title": "Compact implies Lindelof versus sigma-compact union",
+      "theme": "compactness",
+      "left": "IsCompact.isLindelof",
+      "right": "isSigmaCompact_iUnion",
+      "expected_contrast": "right",
+      "interpretation": "The compact-to-Lindelof theorem is a standard compactness consequence. The sigma-compact union result has a broader countable compact-cover footprint.",
+      "left_human_argument": "The proof turns an arbitrary open cover of a compact set into a finite subcover. Since every finite subcover is countable, compactness immediately implies the Lindelof property.",
+      "right_human_argument": "The proof handles a countable union of sigma-compact sets. For each member it chooses a countable compact cover, then flattens the two layers of countability into one countable family of compact sets covering the whole union."
+    },
+    {
+      "case_id": "closed_lindelof_closure",
+      "title": "Closed Lindelof subset versus compact closure",
+      "theme": "compactness",
+      "left": "IsClosed.isLindelof",
+      "right": "IsCompact.closure",
+      "expected_contrast": "right",
+      "interpretation": "The closed-subset Lindelof result is a local closure property. The compact-closure theorem routes through separation and compactness closure machinery.",
+      "left_human_argument": "The proof extends an open cover of a closed subset to a cover of the ambient Lindelof set by adding the open complement. After taking a countable subcover, it removes the complement piece and obtains a countable cover of the closed subset.",
+      "right_human_argument": "The proof uses the Hausdorff separation fact that compact sets are closed, or equivalently that the closure of a compact set does not add new noncompact behavior. Once the closure is controlled by the compact set, compactness transfers to the closure."
+    },
+    {
+      "case_id": "embedding_lindelof_local_compact_maps",
+      "title": "Embedding Lindelof equivalence versus compact neighborhood maps",
+      "theme": "compactness",
+      "left": "Embedding.isLindelof_iff",
+      "right": "exists_mem_nhdsSet_isCompact_mapsTo",
+      "expected_contrast": "right",
+      "interpretation": "The embedding equivalence is a transfer statement. The compact-neighborhood maps theorem combines local compactness, neighborhoods, compact sets, and maps-to constraints.",
+      "left_human_argument": "The proof uses that an embedding identifies the source with its image topologically. Lindelofness is transported across this identification, so covers on one side correspond to covers on the other.",
+      "right_human_argument": "The proof starts from a compact set inside a neighborhood-set condition and uses local compactness to find a compact neighborhood with controlled image. It then packages the compact set, the neighborhood membership, and the maps-to condition into the required witness."
+    }
+  ]
+}

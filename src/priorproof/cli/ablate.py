@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from priorproof.data.io import write_jsonl
+from priorproof.data.io import read_json, write_jsonl
 from priorproof.corpus.pipeline import (
     build_retrieval_prior_contexts,
     load_declarations,
@@ -30,6 +30,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--snapshots", required=True)
     add_encoder_args(parser)
     parser.add_argument("--out-dir", required=True)
+    parser.add_argument("--target-declarations", help="Optional JSON list of declaration names to score.")
     parser.add_argument("--k", type=int, default=32)
     return parser.parse_args()
 
@@ -48,11 +49,21 @@ def main() -> None:
         encoders_by_snapshot=encoders_by_snapshot,
         k=args.k,
         snapshots=snapshots,
+        target_names=load_target_names(args.target_declarations),
     )
     for name, config in ABLATIONS.items():
         scores, priors = score_retrieval_prior_contexts(contexts, footprints_by_decl, config=config)
         write_jsonl(out_dir / f"{name}_scores.jsonl", scores)
         write_jsonl(out_dir / f"{name}_priors.jsonl", priors)
+
+
+def load_target_names(path: str | None) -> set[str] | None:
+    if not path:
+        return None
+    data = read_json(path)
+    if not isinstance(data, list):
+        raise ValueError("--target-declarations must contain a JSON list")
+    return {str(item) for item in data}
 
 
 if __name__ == "__main__":
