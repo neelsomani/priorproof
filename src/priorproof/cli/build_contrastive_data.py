@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from priorproof.corpus.pipeline import load_declarations, load_footprints
+from priorproof.corpus.pipeline import load_declarations, load_footprints, load_snapshots
 from priorproof.data.io import write_json, write_jsonl
 from priorproof.modeling.contrastive import PairMiningConfig, mine_contrastive_examples, signal_counts
 
@@ -12,6 +12,11 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build proof-derived contrastive training examples for the statement encoder.")
     parser.add_argument("--declarations", required=True)
     parser.add_argument("--footprints", required=True)
+    parser.add_argument("--snapshots", help="Snapshot file used with --train-before-snapshot.")
+    parser.add_argument(
+        "--train-before-snapshot",
+        help="Mine examples only from declarations available in this snapshot's pre-bin corpus.",
+    )
     parser.add_argument("--out-examples", required=True)
     parser.add_argument("--out-report", required=True)
     parser.add_argument("--shared-family-min", type=int, default=2)
@@ -26,6 +31,20 @@ def main() -> None:
     args = parse_args()
     records = load_declarations(args.declarations)
     footprints = load_footprints(args.footprints)
+    if args.train_before_snapshot:
+        if not args.snapshots:
+            raise ValueError("--snapshots is required with --train-before-snapshot")
+        snapshots = load_snapshots(args.snapshots)
+        declarations = {
+            name
+            for snapshot in snapshots
+            if snapshot.snapshot_id == args.train_before_snapshot
+            for name in snapshot.declarations
+        }
+        if not declarations:
+            raise ValueError(f"No declarations found for snapshot {args.train_before_snapshot!r}")
+        records = [record for record in records if record.name in declarations]
+        footprints = [footprint for footprint in footprints if footprint.declaration in declarations]
     config = PairMiningConfig(
         shared_family_min=args.shared_family_min,
         downstream_user_min=args.downstream_user_min,
@@ -40,6 +59,7 @@ def main() -> None:
         {
             "declaration_count": len(records),
             "footprint_count": len(footprints),
+            "train_before_snapshot": args.train_before_snapshot,
             "example_count": len(examples),
             "positive_signal_counts": dict(signal_counts(examples)),
             "hard_negative_count": sum(len(example.hard_negatives) for example in examples),
@@ -49,4 +69,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

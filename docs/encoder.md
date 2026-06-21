@@ -15,9 +15,13 @@ Build training examples from declarations and footprints:
 priorproof-build-contrastive-data \
   --declarations data/declarations.jsonl \
   --footprints artifacts/corpus/footprints_t5.jsonl \
-  --out-examples artifacts/encoder/contrastive_examples_t5.jsonl \
-  --out-report artifacts/encoder/contrastive_report_t5.json
+  --snapshots artifacts/corpus/snapshots.json \
+  --train-before-snapshot 2024Q1 \
+  --out-examples artifacts/encoder/contrastive_examples_t5_2024Q1.jsonl \
+  --out-report artifacts/encoder/contrastive_report_t5_2024Q1.json
 ```
+
+`--train-before-snapshot` restricts mining to the declarations listed in that snapshot's pre-bin corpus. Use it when training either a per-bin encoder or the frozen-early encoder.
 
 Positive signals:
 
@@ -45,9 +49,9 @@ Fine-tune a base sentence-transformer checkpoint:
 ```bash
 priorproof-train-neural-encoder \
   --declarations data/declarations.jsonl \
-  --examples artifacts/encoder/contrastive_examples_t5.jsonl \
+  --examples artifacts/encoder/contrastive_examples_t5_2024Q1.jsonl \
   --base-model sentence-transformers/all-MiniLM-L6-v2 \
-  --out-dir artifacts/encoder/neural_t5 \
+  --out-dir artifacts/encoder/neural_t5_2024Q1 \
   --epochs 1 \
   --batch-size 64
 ```
@@ -62,3 +66,37 @@ Two valid regimes:
 - Per-snapshot encoders: train one encoder per time bin using only pre-bin positives.
 
 Final reported results should use the frozen-early encoder only if the neighbor-stability check passes. Otherwise use per-snapshot encoders.
+
+For per-snapshot scoring, provide a JSON map from snapshot id to trained encoder directory:
+
+```json
+{
+  "2024Q1": "artifacts/encoder/neural_t5_2024Q1",
+  "2024Q2": "artifacts/encoder/neural_t5_2024Q2"
+}
+```
+
+Then pass that map to scoring and validation commands:
+
+```bash
+priorproof-fit-prior \
+  --declarations data/declarations.jsonl \
+  --footprints artifacts/corpus/footprints_t5.jsonl \
+  --snapshots artifacts/corpus/snapshots.json \
+  --encoder-map artifacts/encoder/encoder_map_t5.json \
+  --out artifacts/prior_grid_t5.json
+```
+
+To validate the frozen-early shortcut:
+
+```bash
+priorproof-check-encoder-stability \
+  --declarations data/declarations.jsonl \
+  --footprints artifacts/corpus/footprints_t5.jsonl \
+  --snapshots artifacts/corpus/snapshots.json \
+  --reference-encoder artifacts/encoder/neural_t5_earliest \
+  --encoder-map artifacts/encoder/encoder_map_t5.json \
+  --out artifacts/encoder/stability_t5.json
+```
+
+If the stability artifact reports `"passed": true`, scoring commands may use `--encoder artifacts/encoder/neural_t5_earliest --allow-shared-encoder`. Without `--allow-shared-encoder`, multi-snapshot scoring refuses a single encoder.

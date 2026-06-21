@@ -2,16 +2,18 @@
 
 Extraction is split into two layers:
 
-- Lean-facing extraction orchestration in `src/priorproof/extraction/snapshots.py`.
+- Lean-facing proof-term extraction in `src/priorproof/extraction/proof_term.py` and orchestration in `src/priorproof/extraction/snapshots.py`.
 - Corpus construction from normalized declaration JSONL in `src/priorproof/corpus/snapshots.py` and `src/priorproof/corpus/pipeline.py`.
 
-The orchestration layer does not hard-code a single extractor. Instead, it prepares a detached Mathlib worktree for each snapshot commit, runs an extractor command template if provided, and normalizes the raw extractor output into the repository's declaration schema.
+The default extractor runs Lean inside each detached Mathlib worktree, imports Mathlib, iterates theorem declarations in Lean's environment, and records constants from each theorem's elaborated proof value. That is the corpus path used by the metric. The source scanner is retained only for plumbing smoke checks.
 
 Install the package before using the commands below:
 
 ```bash
 python3 -m pip install -e ".[dev]"
 ```
+
+The proof-term extractor also requires Lean/Lake on `PATH`, using the version pinned by Mathlib's `lean-toolchain`. Install Lean through elan if `lake --version` fails.
 
 ## Snapshot Manifest
 
@@ -31,20 +33,71 @@ Each manifest item has:
 
 ## Extraction Orchestration
 
-Run with an extractor command template:
+Run the proof-term extractor:
 
 ```bash
 priorproof-extract-declarations \
   --manifest artifacts/extraction/manifest.json \
-  --mathlib-repo /path/to/mathlib4 \
+  --mathlib-repo external/mathlib4 \
   --worktrees-dir artifacts/extraction/worktrees \
   --raw-dir artifacts/extraction/raw \
   --normalized-dir artifacts/extraction/normalized \
   --out-declarations data/declarations.jsonl \
   --out-snapshots artifacts/corpus/snapshots.json \
   --report artifacts/extraction/report.json \
+  --backend proof-term \
+  --adapter priorproof \
+  --execute \
+  --strict-raw
+```
+
+Use `--import` and `--module-prefix` to narrow extraction to a Mathlib area during development. Both options are repeatable and default to `Mathlib`.
+
+Run the direct extractor for one checkout:
+
+```bash
+priorproof-proof-term-extract \
+  --repo external/mathlib4 \
+  --out artifacts/extraction/raw/current.jsonl \
+  --commit "$(git -C external/mathlib4 rev-parse HEAD)" \
+  --proof-date "$(git -C external/mathlib4 show -s --format=%cs HEAD)" \
+  --import Mathlib.Topology.Basic \
+  --module-prefix Mathlib.Topology
+```
+
+Run with a third-party extractor command template:
+
+```bash
+priorproof-extract-declarations \
+  --manifest artifacts/extraction/manifest.json \
+  --mathlib-repo external/mathlib4 \
+  --worktrees-dir artifacts/extraction/worktrees \
+  --raw-dir artifacts/extraction/raw \
+  --normalized-dir artifacts/extraction/normalized \
+  --out-declarations data/declarations.jsonl \
+  --out-snapshots artifacts/corpus/snapshots.json \
+  --report artifacts/extraction/report.json \
+  --backend command \
   --adapter auto \
   --extractor-command "python3 /path/to/extractor.py --repo {worktree} --out {raw_path}" \
+  --execute \
+  --strict-raw
+```
+
+Run the source scanner only for smoke checks:
+
+```bash
+priorproof-extract-declarations \
+  --manifest artifacts/extraction/manifest.json \
+  --mathlib-repo external/mathlib4 \
+  --worktrees-dir artifacts/extraction/worktrees \
+  --raw-dir artifacts/extraction/raw \
+  --normalized-dir artifacts/extraction/normalized \
+  --out-declarations data/declarations.jsonl \
+  --out-snapshots artifacts/corpus/snapshots.json \
+  --report artifacts/extraction/report.json \
+  --backend source-scan \
+  --adapter auto \
   --execute \
   --strict-raw
 ```

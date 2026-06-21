@@ -4,7 +4,7 @@ import argparse
 import random
 from pathlib import Path
 
-from priorproof.modeling.neural_encoder import load_neural_statement_encoder
+from priorproof.cli.encoder_args import add_encoder_args, load_encoder_selection
 from priorproof.data.io import write_jsonl
 from priorproof.corpus.pipeline import load_declarations, load_footprints, load_snapshots
 from priorproof.modeling.prior import PriorConfig, build_hierarchical_prior
@@ -17,7 +17,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--declarations", required=True)
     parser.add_argument("--footprints", required=True)
     parser.add_argument("--snapshots", required=True)
-    parser.add_argument("--encoder", required=True, help="Loaded for metadata parity; retrieval is randomized.")
+    add_encoder_args(parser)
     parser.add_argument("--out-scores", required=True)
     parser.add_argument("--out-priors", required=True)
     parser.add_argument("--k", type=int, default=32)
@@ -31,7 +31,7 @@ def main() -> None:
     declarations = load_declarations(args.declarations)
     footprints = load_footprints(args.footprints)
     snapshots = load_snapshots(args.snapshots)
-    load_neural_statement_encoder(args.encoder)
+    load_encoder_selection(args, footprints)
     by_name = {record.name: record for record in declarations}
     by_snapshot = {snapshot.snapshot_id: snapshot for snapshot in snapshots}
     footprints_by_decl = {footprint.declaration: footprint for footprint in footprints}

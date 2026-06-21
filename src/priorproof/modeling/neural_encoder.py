@@ -46,6 +46,13 @@ def load_neural_statement_encoder(path: str | Path) -> NeuralStatementEncoder:
     return NeuralStatementEncoder(source)
 
 
+def load_encoder_map(mapping: dict[str, object]) -> dict[str, NeuralStatementEncoder]:
+    return {
+        str(snapshot_id): load_neural_statement_encoder(str(path))
+        for snapshot_id, path in mapping.items()
+    }
+
+
 def train_neural_encoder(
     records: list[DeclarationRecord],
     examples: list[ContrastiveExample],

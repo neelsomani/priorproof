@@ -43,30 +43,26 @@ The one residual that no mechanism closes is *diffuse* human-mediated influence:
 Install the package in editable mode before running commands:
 
 ```bash
-python3 -m pip install -e ".[dev]"
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -e ".[dev]"
 ```
 
-Editable install means changes under `src/priorproof/` are picked up immediately. Reinstall only when `pyproject.toml` dependencies or console entrypoints change.
-
-The install exposes the `priorproof-*` commands used below.
-
-Before running gate checks, metric construction, scoring, or validation, you need a normalized declaration corpus:
-
-```text
-data/declarations.jsonl
-```
-
-Create it with the extraction commands in the Corpus And Extraction section. If you already have extractor output, `priorproof-extract-declarations` can normalize it; see `docs/extraction.md` and `docs/data_schema.md`.
+Reinstall only when `pyproject.toml` dependencies or console entrypoints change. The install exposes the `priorproof-*` commands used below.
 
 ### Corpus And Extraction
 
-Freeze Mathlib snapshots, run a Lean/LeanDojo/ntp-toolkit extractor, normalize extractor output into declaration JSONL, and build corpus artifacts.
+Freeze Mathlib snapshots, run Lean over each snapshot, extract declaration records from elaborated theorem values, normalize the output into declaration JSONL, and build corpus artifacts.
 
 Relevant files:
 
 - `src/priorproof/extraction/snapshots.py`: snapshot manifest handling, Mathlib worktree orchestration, extractor-output normalization.
+- `src/priorproof/extraction/proof_term.py`: Lean-backed proof-term extractor that reads theorem values and their used constants.
+- `src/priorproof/extraction/source_scan.py`: source scanner retained only for plumbing smoke checks.
 - `src/priorproof/cli/make_snapshot_manifest.py`: builds an extraction manifest from commit pins.
-- `src/priorproof/cli/extract_declarations.py`: prepares worktrees, runs the extractor command template, normalizes raw output, and merges declarations.
+- `src/priorproof/cli/extract_declarations.py`: prepares worktrees, runs the selected extractor backend, normalizes raw output, and merges declarations.
+- `src/priorproof/cli/proof_term_extract.py`: direct proof-term extractor command for one Mathlib checkout.
 - `src/priorproof/data/models.py`: declaration, dependency, snapshot, footprint, and score records.
 - `docs/extraction.md`: detailed extraction manifest, command-template, and adapter notes.
 - `docs/data_schema.md`: normalized JSONL schema expected by the rest of the pipeline.
@@ -79,17 +75,24 @@ priorproof-make-snapshot-manifest \
   --commits configs/snapshot_commits.example.json \
   --out artifacts/extraction/manifest.json
 
+# The proof-term extractor expects Lean/Lake from Mathlib's lean-toolchain on PATH.
+# If `lake --version` fails, install elan before running extraction.
+
+# Create a local mathlib repo if the checkout is not already present
+mkdir -p external
+test -d external/mathlib4 || git clone https://github.com/leanprover-community/mathlib4 external/mathlib4
+
 priorproof-extract-declarations \
   --manifest artifacts/extraction/manifest.json \
-  --mathlib-repo /path/to/mathlib4 \
+  --mathlib-repo external/mathlib4 \
   --worktrees-dir artifacts/extraction/worktrees \
   --raw-dir artifacts/extraction/raw \
   --normalized-dir artifacts/extraction/normalized \
   --out-declarations data/declarations.jsonl \
   --out-snapshots artifacts/corpus/snapshots.json \
   --report artifacts/extraction/report.json \
-  --adapter auto \
-  --extractor-command "python3 /path/to/extractor.py --repo {worktree} --out {raw_path}" \
+  --backend proof-term \
+  --adapter priorproof \
   --execute \
   --strict-raw
 ```
@@ -184,7 +187,7 @@ python3 -m pytest tests/test_metric_core.py
 
 Estimate what dependencies would have been expected for a theorem before its proof existed, then score how surprising the actual footprint is under that expectation.
 
-This step does four things:
+This step does five things:
 
 1. Mine contrastive training examples from the pre-time corpus. Positives come from shared proof families, shared downstream users, major dependency links, and same-namespace symbol overlap. Hard negatives come from statements that look similar but have no dependency-family overlap or a different theorem shape.
 2. Fine-tune a transformer statement encoder. It reads theorem statements, not proofs, and turns them into vectors so similar statements can be compared. This requires the optional ML dependencies and a modest GPU.
@@ -226,8 +229,9 @@ Relevant files:
 - `src/priorproof/modeling/retriever.py`: statement-neighbor retrieval.
 - `src/priorproof/modeling/prior.py`: retrieval/namespace/module/global smoothed prior.
 - `src/priorproof/corpus/pipeline.py`: `score_with_retrieval_prior` orchestration.
-- `src/priorproof/cli/build_contrastive_data.py`: contrastive data mining command.
+- `src/priorproof/cli/build_contrastive_data.py`: contrastive data mining command with a pre-bin slice selector.
 - `src/priorproof/cli/train_neural_encoder.py`: neural encoder fine-tuning command.
+- `src/priorproof/cli/check_encoder_stability.py`: frozen-early versus per-bin neighbor-stability check.
 - `src/priorproof/cli/fit_prior.py`: prior grid search by chronological likelihood.
 - `src/priorproof/cli/score_novelty.py`: novelty scoring command.
 - `docs/encoder.md`: learned encoder training and time-slicing details.
@@ -240,32 +244,54 @@ python3 -m pip install -e ".[ml]"
 priorproof-build-contrastive-data \
   --declarations data/declarations.jsonl \
   --footprints artifacts/corpus/footprints_t5.jsonl \
-  --out-examples artifacts/encoder/contrastive_examples_t5.jsonl \
-  --out-report artifacts/encoder/contrastive_report_t5.json
+  --snapshots artifacts/corpus/snapshots.json \
+  --train-before-snapshot 2024Q1 \
+  --out-examples artifacts/encoder/contrastive_examples_t5_2024Q1.jsonl \
+  --out-report artifacts/encoder/contrastive_report_t5_2024Q1.json
 
 priorproof-train-neural-encoder \
   --declarations data/declarations.jsonl \
-  --examples artifacts/encoder/contrastive_examples_t5.jsonl \
+  --examples artifacts/encoder/contrastive_examples_t5_2024Q1.jsonl \
   --base-model sentence-transformers/all-MiniLM-L6-v2 \
-  --out-dir artifacts/encoder/neural_t5 \
+  --out-dir artifacts/encoder/neural_t5_2024Q1 \
   --epochs 1 \
   --batch-size 64
+
+# After training one encoder per scoring snapshot, create a JSON map:
+# {
+#   "2024Q1": "artifacts/encoder/neural_t5_2024Q1",
+#   "2024Q2": "artifacts/encoder/neural_t5_2024Q2"
+# }
 
 priorproof-fit-prior \
   --declarations data/declarations.jsonl \
   --footprints artifacts/corpus/footprints_t5.jsonl \
   --snapshots artifacts/corpus/snapshots.json \
-  --encoder artifacts/encoder/neural_t5 \
+  --encoder-map artifacts/encoder/encoder_map_t5.json \
   --out artifacts/prior_grid_t5.json
 
 priorproof-score \
   --declarations data/declarations.jsonl \
   --footprints artifacts/corpus/footprints_t5.jsonl \
   --snapshots artifacts/corpus/snapshots.json \
-  --encoder artifacts/encoder/neural_t5 \
+  --encoder-map artifacts/encoder/encoder_map_t5.json \
   --out-scores artifacts/scores_t5.jsonl \
   --out-priors artifacts/priors_t5.jsonl
 ```
+
+The cheaper frozen-early shortcut is allowed only after it has a stability artifact. Train the earliest-slice encoder and the per-bin comparison encoders, then run:
+
+```bash
+priorproof-check-encoder-stability \
+  --declarations data/declarations.jsonl \
+  --footprints artifacts/corpus/footprints_t5.jsonl \
+  --snapshots artifacts/corpus/snapshots.json \
+  --reference-encoder artifacts/encoder/neural_t5_earliest \
+  --encoder-map artifacts/encoder/encoder_map_t5.json \
+  --out artifacts/encoder/stability_t5.json
+```
+
+If `artifacts/encoder/stability_t5.json` reports `"passed": true`, `priorproof-fit-prior`, `priorproof-score`, `priorproof-ablate`, and `priorproof-counterfactual-priors` may use `--encoder artifacts/encoder/neural_t5_earliest --allow-shared-encoder`. Without that flag, those commands refuse to use one encoder across multiple snapshots.
 
 Test/check:
 
@@ -292,14 +318,14 @@ priorproof-ablate \
   --declarations data/declarations.jsonl \
   --footprints artifacts/corpus/footprints_t5.jsonl \
   --snapshots artifacts/corpus/snapshots.json \
-  --encoder artifacts/encoder.json \
+  --encoder-map artifacts/encoder/encoder_map_t5.json \
   --out-dir artifacts/ablations
 
 priorproof-counterfactual-priors \
   --declarations data/declarations.jsonl \
   --footprints artifacts/corpus/footprints_t5.jsonl \
   --snapshots artifacts/corpus/snapshots.json \
-  --encoder artifacts/encoder.json \
+  --encoder-map artifacts/encoder/encoder_map_t5.json \
   --out-scores artifacts/counterfactual_scores_t5.jsonl \
   --out-priors artifacts/counterfactual_priors_t5.jsonl
 

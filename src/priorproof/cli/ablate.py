@@ -3,10 +3,10 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from priorproof.modeling.neural_encoder import load_neural_statement_encoder
 from priorproof.data.io import write_jsonl
 from priorproof.corpus.pipeline import load_declarations, load_footprints, load_snapshots, score_with_retrieval_prior
 from priorproof.modeling.prior import PriorConfig
+from priorproof.cli.encoder_args import add_encoder_args, load_encoder_selection
 
 
 ABLATIONS = {
@@ -22,7 +22,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--declarations", required=True)
     parser.add_argument("--footprints", required=True)
     parser.add_argument("--snapshots", required=True)
-    parser.add_argument("--encoder", required=True)
+    add_encoder_args(parser)
     parser.add_argument("--out-dir", required=True)
     parser.add_argument("--k", type=int, default=32)
     return parser.parse_args()
@@ -34,12 +34,13 @@ def main() -> None:
     declarations = load_declarations(args.declarations)
     footprints = load_footprints(args.footprints)
     snapshots = load_snapshots(args.snapshots)
-    encoder = load_neural_statement_encoder(args.encoder)
+    encoder, encoders_by_snapshot = load_encoder_selection(args, footprints)
     for name, config in ABLATIONS.items():
         scores, priors = score_with_retrieval_prior(
             declarations,
             footprints,
             encoder,
+            encoders_by_snapshot=encoders_by_snapshot,
             config=config,
             k=args.k,
             snapshots=snapshots,

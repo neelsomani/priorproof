@@ -116,11 +116,14 @@ def dependency_lookup_for(
 def score_with_retrieval_prior(
     declarations: list[DeclarationRecord],
     footprints: list[Footprint],
-    encoder: StatementEmbeddingModel,
+    encoder: StatementEmbeddingModel | None = None,
+    encoders_by_snapshot: dict[str, StatementEmbeddingModel] | None = None,
     config: PriorConfig | None = None,
     k: int = 32,
     snapshots: list[Snapshot] | None = None,
 ) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+    if encoder is None and not encoders_by_snapshot:
+        raise ValueError("Either encoder or encoders_by_snapshot is required")
     by_name = {record.name: record for record in declarations}
     footprints_by_decl = {footprint.declaration: footprint for footprint in footprints}
     snapshots_by_id = {snapshot.snapshot_id: snapshot for snapshot in snapshots or []}
@@ -143,7 +146,8 @@ def score_with_retrieval_prior(
                 for record in declarations
                 if record.proof_date < target.proof_date and record.name in footprints_by_decl
             ]
-        retriever = StatementRetriever(encoder, pre_t_records)
+        active_encoder = encoder_for_snapshot(footprint.snapshot_id, encoder, encoders_by_snapshot)
+        retriever = StatementRetriever(active_encoder, pre_t_records)
         hits = retriever.query(target, k=k)
         prior = build_hierarchical_prior(target, pre_t_records, footprints_by_decl, hits, config)
         score = score_footprint(
@@ -162,6 +166,21 @@ def score_with_retrieval_prior(
             }
         )
     return scores, prior_rows
+
+
+def encoder_for_snapshot(
+    snapshot_id: str,
+    encoder: StatementEmbeddingModel | None,
+    encoders_by_snapshot: dict[str, StatementEmbeddingModel] | None,
+) -> StatementEmbeddingModel:
+    if encoders_by_snapshot:
+        try:
+            return encoders_by_snapshot[snapshot_id]
+        except KeyError as exc:
+            raise ValueError(f"No encoder configured for snapshot {snapshot_id!r}") from exc
+    if encoder is None:
+        raise ValueError("No encoder configured")
+    return encoder
 
 
 def save_snapshots(path: str | Path, snapshots: list[Snapshot]) -> None:

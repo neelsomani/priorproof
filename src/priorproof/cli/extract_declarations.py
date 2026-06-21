@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import argparse
+import shlex
 from pathlib import Path
 
 from priorproof.data.io import write_json
+from priorproof.extraction.proof_term import ProofTermExtractorConfig, extract_proof_terms
+from priorproof.extraction.source_scan import SourceScanConfig, extract_source_scan
 from priorproof.extraction.snapshots import (
     ExtractionResult,
     load_snapshot_manifest,
@@ -27,13 +30,42 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--out-snapshots", required=True, help="Snapshot JSON output with declaration names.")
     parser.add_argument("--report", required=True, help="Extraction report JSON.")
     parser.add_argument(
+        "--backend",
+        choices=("proof-term", "source-scan", "command"),
+        default="proof-term",
+        help="Extractor backend. `proof-term` runs Lean and reads elaborated theorem values.",
+    )
+    parser.add_argument(
         "--extractor-command",
         help=(
-            "Optional command template. Available variables: {worktree}, {repo}, {commit}, "
+            "Command backend template. Available variables: {worktree}, {repo}, {commit}, "
             "{snapshot_id}, {start_date}, {raw_path}, {normalized_path}."
         ),
     )
     parser.add_argument("--adapter", choices=("auto", "priorproof", "leandojo", "ntp", "generic"), default="auto")
+    parser.add_argument(
+        "--import",
+        dest="imports",
+        action="append",
+        default=[],
+        help="Lean module imported by the proof-term extractor. Repeatable. Defaults to Mathlib.",
+    )
+    parser.add_argument(
+        "--module-prefix",
+        dest="module_prefixes",
+        action="append",
+        default=[],
+        help="Module prefix retained by the proof-term extractor. Repeatable. Defaults to Mathlib.",
+    )
+    parser.add_argument(
+        "--include-private",
+        action="store_true",
+        help="Keep private/generated declarations in built-in extractors.",
+    )
+    parser.add_argument(
+        "--lean-command",
+        help="Override Lean runner for proof-term extraction, e.g. 'lake env lean'.",
+    )
     parser.add_argument("--raw-suffix", default=".jsonl", choices=(".jsonl", ".json"))
     parser.add_argument("--execute", action="store_true", help="Actually run git and extractor commands.")
     parser.add_argument(
@@ -75,10 +107,53 @@ def main() -> None:
         }
         git_plan = prepare_mathlib_worktree(repo, worktree, snapshot.commit, execute=args.execute)
         command_display = None
-        if args.extractor_command:
+        if args.backend == "command":
+            if not args.extractor_command:
+                raise ValueError("--extractor-command is required when --backend command is used")
             command = render_command_template(args.extractor_command, variables)
             command_display = command.display()
             run_extractor_command(command, execute=args.execute)
+        else:
+            if args.backend == "proof-term":
+                imports = tuple(args.imports or ["Mathlib"])
+                module_prefixes = tuple(args.module_prefixes or ["Mathlib"])
+                command_display = (
+                    "priorproof-proof-term-extract "
+                    f"--repo {worktree} --out {raw_path} --commit {snapshot.commit} "
+                    f"--proof-date {snapshot.start_date.isoformat()} "
+                    + " ".join(f"--import {item}" for item in imports)
+                    + " "
+                    + " ".join(f"--module-prefix {item}" for item in module_prefixes)
+                )
+                if args.execute:
+                    extract_proof_terms(
+                        ProofTermExtractorConfig(
+                            repo=worktree,
+                            out=raw_path,
+                            commit=snapshot.commit,
+                            proof_date=snapshot.start_date,
+                            imports=imports,
+                            module_prefixes=module_prefixes,
+                            include_private=args.include_private,
+                            lean_command=tuple(shlex.split(args.lean_command)) if args.lean_command else None,
+                        )
+                    )
+            else:
+                command_display = (
+                    "priorproof-source-scan-extract "
+                    f"--repo {worktree} --out {raw_path} --commit {snapshot.commit} "
+                    f"--proof-date {snapshot.start_date.isoformat()}"
+                )
+                if args.execute:
+                    extract_source_scan(
+                        SourceScanConfig(
+                            repo=worktree,
+                            out=raw_path,
+                            commit=snapshot.commit,
+                            proof_date=snapshot.start_date,
+                            include_private=args.include_private,
+                        )
+                    )
         planned_commands.append(
             {
                 "snapshot_id": snapshot.snapshot_id,
@@ -94,7 +169,10 @@ def main() -> None:
             if args.strict_raw:
                 raise FileNotFoundError(f"Missing raw extractor output: {raw_path}")
             continue
-        records = normalize_extractor_file(raw_path, normalized_path, adapter=args.adapter, snapshot=snapshot)
+        adapter = args.adapter
+        if adapter == "auto" and args.backend in {"proof-term", "source-scan"}:
+            adapter = "priorproof"
+        records = normalize_extractor_file(raw_path, normalized_path, adapter=adapter, snapshot=snapshot)
         normalized_paths.append(normalized_path)
         declarations_by_snapshot[snapshot.snapshot_id] = [record.name for record in records]
         results.append(
@@ -116,6 +194,8 @@ def main() -> None:
         {
             "execute": args.execute,
             "adapter": args.adapter,
+            "effective_adapter": "priorproof" if args.adapter == "auto" and args.backend in {"proof-term", "source-scan"} else args.adapter,
+            "backend": args.backend,
             "snapshot_count": len(manifest),
             "normalized_snapshot_count": len(results),
             "merged_declaration_count": len(merged),

@@ -8,6 +8,7 @@ from priorproof.extraction.snapshots import (
     normalize_raw_row,
     render_command_template,
 )
+from priorproof.extraction.proof_term import LEAN_EXTRACTOR, ProofTermExtractorConfig, extractor_command
 
 
 def test_manifest_from_commit_map_infers_quarter_start() -> None:
@@ -47,3 +48,29 @@ def test_command_template_renders_shell_words() -> None:
     )
     assert command.argv == ("python", "extractor.py", "--repo", "/tmp/mathlib", "--out", "/tmp/raw.jsonl")
 
+
+def test_proof_term_extractor_command_uses_lean_run(tmp_path) -> None:
+    command = extractor_command(
+        ProofTermExtractorConfig(
+            repo=tmp_path,
+            out=tmp_path / "raw.jsonl",
+            commit="abc123",
+            proof_date=date(2024, 1, 1),
+            imports=("Mathlib.Topology.Basic",),
+            module_prefixes=("Mathlib.Topology",),
+            lean_command=("lake", "env", "lean"),
+        ),
+        tmp_path / "PriorProofExtract.lean",
+    )
+    assert command[:4] == ("lake", "env", "lean", "--run")
+    assert "--import" in command
+    assert "Mathlib.Topology.Basic" in command
+    assert "--module-prefix" in command
+    assert "Mathlib.Topology" in command
+
+
+def test_embedded_extractor_reads_theorem_values_not_source_text() -> None:
+    assert ".thmInfo val" in LEAN_EXTRACTOR
+    assert "val.value" in LEAN_EXTRACTOR
+    assert "exprConstants value" in LEAN_EXTRACTOR
+    assert "source_scan" not in LEAN_EXTRACTOR

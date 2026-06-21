@@ -3,17 +3,17 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from priorproof.modeling.neural_encoder import load_neural_statement_encoder
 from priorproof.data.io import write_jsonl
 from priorproof.corpus.pipeline import load_declarations, load_footprints, load_snapshots, score_with_retrieval_prior
 from priorproof.modeling.prior import PriorConfig
+from priorproof.cli.encoder_args import add_encoder_args, load_encoder_selection
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Score proof-footprint novelty with a retrieval-conditioned prior.")
     parser.add_argument("--declarations", required=True)
     parser.add_argument("--footprints", required=True)
-    parser.add_argument("--encoder", required=True)
+    add_encoder_args(parser)
     parser.add_argument("--snapshots", help="Optional snapshots.json. Required for strict start-of-bin leakage discipline.")
     parser.add_argument("--out-scores", required=True)
     parser.add_argument("--out-priors", required=True)
@@ -31,7 +31,7 @@ def main() -> None:
     declarations = load_declarations(args.declarations)
     footprints = load_footprints(args.footprints)
     snapshots = load_snapshots(args.snapshots) if args.snapshots else None
-    encoder = load_neural_statement_encoder(args.encoder)
+    encoder, encoders_by_snapshot = load_encoder_selection(args, footprints)
     config = PriorConfig(
         alpha=args.alpha,
         retrieval_weight=args.retrieval_weight,
@@ -43,6 +43,7 @@ def main() -> None:
         declarations,
         footprints,
         encoder,
+        encoders_by_snapshot=encoders_by_snapshot,
         config=config,
         k=args.k,
         snapshots=snapshots,

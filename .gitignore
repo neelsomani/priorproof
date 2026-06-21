@@ -25,10 +25,10 @@ env/
 # Research outputs and generated corpora
 artifacts/
 data/
+external/
 *.jsonl.tmp
 
 # OS/editor noise
 .DS_Store
 .idea/
 .vscode/
-

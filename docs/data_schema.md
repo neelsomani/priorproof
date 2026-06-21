@@ -1,6 +1,6 @@
 # Data Schema
 
-PriorProof expects Lean extraction output as JSONL declaration records. The Lean-facing extractor can be replaced as long as it emits this schema.
+PriorProof expects Lean extraction output as JSONL declaration records. The default extractor emits this schema by reading elaborated theorem values in Lean and collecting the constants used by each proof term.
 
 `priorproof-extract-declarations` can also normalize flexible LeanDojo-like, ntp-toolkit-like, or generic raw extractor output into this schema.
 
@@ -36,7 +36,7 @@ Optional fields:
 - `snapshots.json`: Quarterly point-in-time slices.
 - `density.json`: Per-snapshot module and namespace density summaries.
 - `footprints_t{threshold}.jsonl`: Established-frontier proof footprints.
-- `encoder.json`: Fitted statement-only encoder.
+- `encoder_map_t{threshold}.json`: Snapshot-id to trained statement-encoder directory map.
 - `priors_t{threshold}.jsonl`: Retrieval hits and family distributions per declaration.
 - `scores_t{threshold}.jsonl`: Novelty scores per declaration.
 - `validation_report.json`: Mechanical validation summaries.
