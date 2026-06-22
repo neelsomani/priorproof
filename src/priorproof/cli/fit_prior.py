@@ -45,11 +45,14 @@ def main() -> None:
     scored_footprints = [context.footprint for context in contexts]
     candidates = [
         PriorConfig(alpha=alpha, retrieval_weight=rw, namespace_weight=nw, module_weight=mw, global_weight=gw)
-        for alpha in (0.1, 0.25, 0.5)
+        for alpha in (0.01, 0.025, 0.05, 0.1, 0.25, 0.5)
         for rw, nw, mw, gw in (
             (0.55, 0.2, 0.15, 0.1),
             (0.4, 0.25, 0.2, 0.15),
             (0.7, 0.1, 0.1, 0.1),
+            (0.8, 0.08, 0.06, 0.06),
+            (0.9, 0.04, 0.03, 0.03),
+            (1.0, 0.0, 0.0, 0.0),
             (0.0, 0.35, 0.3, 0.35),
         )
     ]

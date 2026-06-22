@@ -109,17 +109,22 @@ def run_openai_requests(requests: list[dict[str, object]], *, response_path: Pat
         from openai import OpenAI
     except ImportError as exc:
         raise RuntimeError("Install the optional `openai` package to use --execute") from exc
-    client = OpenAI(api_key=api_key)
+    client = OpenAI(api_key=api_key, timeout=60.0)
     rows = existing_responses(response_path)
     completed = {response_key(row) for row in rows}
     for request in requests:
         key = response_key(request)
         if key in completed:
             continue
-        response = client.responses.create(
-            model=str(request["model"]),
-            input=str(request["prompt"]),
-        )
+        try:
+            response = client.responses.create(
+                model=str(request["model"]),
+                input=str(request["prompt"]),
+            )
+        except Exception as exc:
+            raise RuntimeError(
+                f"OpenAI request failed for {request['pair_id']} {request['model']} {request['strictness']}: {exc}"
+            ) from exc
         text = response.output_text.strip()
         rows.append(
             {
@@ -159,4 +164,7 @@ def normalize_choice(text: str) -> str:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except RuntimeError as exc:
+        raise SystemExit(str(exc)) from None

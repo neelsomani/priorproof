@@ -380,6 +380,22 @@ def test_proof_narrative_prompt_hides_metric_internals() -> None:
     validate_narrative("The construction first handles the higher-priority neighborhood condition.")
 
 
+def test_proof_narrative_rejects_formal_identifiers() -> None:
+    rejected = [
+        "This follows from Metric.closedBall and compactness.",
+        "The result rewrites IsCompact A as compactness of the image.",
+        "The proof shows A ↔ B by applying the neighborhood filter 𝓝.",
+        "The coLindelof filter is handled by rewriting nhds.",
+        "The proof uses f '' s to describe the image.",
+    ]
+    for narrative in rejected:
+        try:
+            validate_narrative(narrative)
+        except RuntimeError:
+            continue
+        raise AssertionError(f"narrative should be rejected: {narrative}")
+
+
 def test_existing_packet_narratives_apply_to_duplicate_declarations() -> None:
     packet = {
         "pairs": [
@@ -403,6 +419,41 @@ def test_find_declaration_start_matches_short_namespaced_name() -> None:
     lines = ["namespace Metric", "theorem cobounded_eq_cocompact : True := by", "  trivial"]
 
     assert find_declaration_start(lines, "Metric.cobounded_eq_cocompact") == 1
+
+
+def test_find_declaration_start_matches_qualified_source_name() -> None:
+    lines = [
+        "lemma Topology.IsInducing.isCompact_preimage_iff {f : X → Y} : True := by",
+        "  trivial",
+    ]
+
+    assert find_declaration_start(lines, "Inducing.isCompact_preimage_iff") == 0
+
+
+def test_find_declaration_start_matches_alias_source_name() -> None:
+    lines = [
+        "theorem isCompact_iff_ultrafilter_le_nhds' : True := by",
+        "  trivial",
+        "alias ⟨IsCompact.ultrafilter_le_nhds', _⟩ := isCompact_iff_ultrafilter_le_nhds'",
+    ]
+
+    assert find_declaration_start(lines, "IsCompact.ultrafilter_le_nhds'") == 0
+
+
+def test_find_declaration_start_matches_generated_mk_iff_name() -> None:
+    lines = [
+        "@[mk_iff]",
+        "class R0Space (X : Type u) [TopologicalSpace X] : Prop where",
+        "  specializes_symm : True",
+    ]
+
+    assert find_declaration_start(lines, "r0Space_iff") == 0
+
+
+def test_find_declaration_start_matches_renamed_separated_nhds_name() -> None:
+    lines = ["theorem SeparatedNhds.of_finset_finset [T2Space X] : True := by", "  trivial"]
+
+    assert find_declaration_start(lines, "separatedNhds_of_finset_finset") == 0
 
 
 def test_llm_baseline_evaluator_reports_accuracy_and_missing_responses() -> None:

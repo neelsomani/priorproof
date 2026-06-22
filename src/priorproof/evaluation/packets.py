@@ -54,8 +54,7 @@ def candidate_source_paths(mathlib_repo: str | Path, record: DeclarationRecord) 
         paths.extend(sorted(module_dir.rglob("*.lean")))
     mathlib_root = repo / "Mathlib"
     if mathlib_root.exists():
-        short_name = record.name.rsplit(".", 1)[-1]
-        needles = (record.name, short_name)
+        needles = tuple(source_name_candidates(record.name))
         for path in sorted(mathlib_root.rglob("*.lean")):
             if path in paths:
                 continue
@@ -68,21 +67,82 @@ def candidate_source_paths(mathlib_repo: str | Path, record: DeclarationRecord) 
     return paths
 
 
-def find_declaration_start(lines: list[str], declaration_name: str) -> int | None:
+def source_name_candidates(declaration_name: str) -> list[str]:
     short_name = declaration_name.rsplit(".", 1)[-1]
-    names = [declaration_name]
+    candidates = [declaration_name]
     if short_name != declaration_name:
-        names.append(short_name)
-    for name in names:
-        pattern = re.compile(
-            r"^\s*(?:private\s+|protected\s+|noncomputable\s+|unsafe\s+)*"
-            r"(?:theorem|lemma|def|abbrev|instance|axiom)\s+"
-            + re.escape(name)
-            + r"(?:\s|:|\(|\[|$)"
-        )
-        for idx, line in enumerate(lines):
+        candidates.append(short_name)
+    if short_name.startswith("separatedNhds_of_"):
+        suffix = short_name.removeprefix("separatedNhds_of_")
+        candidates.append(f"SeparatedNhds.of_{suffix}")
+    return list(dict.fromkeys(candidates))
+
+
+def find_declaration_start(lines: list[str], declaration_name: str) -> int | None:
+    names = source_name_candidates(declaration_name)
+    for idx, line in enumerate(lines):
+        for name in names:
+            pattern = re.compile(
+                r"^\s*(?:private\s+|protected\s+|noncomputable\s+|unsafe\s+)*"
+                r"(?:theorem|lemma|def|abbrev|instance|axiom|class)\s+"
+                + re.escape(name)
+                + r"(?:\s|:|\(|\[|$)"
+            )
             if pattern.search(line):
                 return idx
+            if alias_line_names_declaration(line, name):
+                previous = previous_declaration_start(lines, idx)
+                return idx if previous is None else previous
+            if mk_iff_line_names_declaration(lines, idx, name):
+                return idx
+        short_name = declaration_name.rsplit(".", 1)[-1]
+        qualified_short = re.compile(
+            r"^\s*(?:private\s+|protected\s+|noncomputable\s+|unsafe\s+)*"
+            r"(?:theorem|lemma|def|abbrev|instance|axiom|class)\s+"
+            r"(?:[A-Za-z0-9_'.]+\.)+"
+            + re.escape(short_name)
+            + r"(?:\s|:|\(|\[|$)"
+        )
+        if qualified_short.search(line):
+            return idx
+    return None
+
+
+def alias_line_names_declaration(line: str, declaration_name: str) -> bool:
+    alias_match = re.search(r"^\s*alias\b(?P<body>.*)$", line)
+    if not alias_match:
+        return False
+    declaration_pattern = (
+        r"(?<![A-Za-z0-9_'.])"
+        + re.escape(declaration_name)
+        + r"(?![A-Za-z0-9_'.])"
+    )
+    return re.search(declaration_pattern, alias_match.group("body")) is not None
+
+
+def mk_iff_line_names_declaration(lines: list[str], idx: int, declaration_name: str) -> bool:
+    line = lines[idx].strip()
+    mk_iff_match = re.match(r"^@\[\s*mk_iff(?:\s+(?P<explicit>[A-Za-z0-9_'.]+))?\s*\]", line)
+    if not mk_iff_match:
+        return False
+    explicit = mk_iff_match.group("explicit")
+    if explicit:
+        return explicit == declaration_name
+    for follow in lines[idx + 1 : min(len(lines), idx + 4)]:
+        class_match = re.match(r"^\s*class\s+(?P<class_name>[A-Za-z0-9_'.]+)\b", follow)
+        if not class_match:
+            continue
+        class_name = class_match.group("class_name").rsplit(".", 1)[-1]
+        if class_name:
+            generated = class_name[0].lower() + class_name[1:] + "_iff"
+            return generated == declaration_name
+    return False
+
+
+def previous_declaration_start(lines: list[str], before_idx: int) -> int | None:
+    for idx in range(before_idx - 1, -1, -1):
+        if is_declaration_boundary(lines[idx]):
+            return idx
     return None
 
 
@@ -90,7 +150,7 @@ def is_declaration_boundary(line: str) -> bool:
     return bool(
         re.match(
             r"^\s*(?:private\s+|protected\s+|noncomputable\s+|unsafe\s+)*"
-            r"(?:theorem|lemma|def|abbrev|instance|axiom|class|structure|inductive)\s+",
+            r"(?:theorem|lemma|def|abbrev|instance|axiom|class|structure|inductive|alias)\s+",
             line,
         )
     )

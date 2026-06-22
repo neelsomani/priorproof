@@ -22,12 +22,27 @@ FORBIDDEN_NARRATIVE_TERMS = (
     "module:",
 )
 
+FORBIDDEN_NARRATIVE_PATTERNS = (
+    (re.compile(r"\b[A-Z][A-Za-z0-9_']*\.[A-Za-z0-9_'.]*\b"), "source identifier"),
+    (re.compile(r"\b[A-Za-z]*[a-z][A-Z][A-Za-z0-9_']*\b"), "camelCase source identifier"),
+    (re.compile(r"\b(?:coLindel\w*|nhds\w*|neBot\w*|mapClusterPt\w*)\b"), "source abbreviation"),
+    (re.compile(r"''"), "source image notation"),
+    (re.compile(r"[↔↑𝓝⤳∀∃]"), "formal proof symbol"),
+)
+
 SYSTEM_PROMPT = (
     "You translate formal proof source into ordinary mathematical exposition for mathematicians. "
     "Explain the proof route in standard mathematical language. Do not mention formal-system "
     "metadata, software-specific names, source identifiers, evaluation machinery, numerical ratings, "
-    "or whether the proof is standard or surprising. If the source is too terse to reconstruct every "
-    "step, explain only what follows from the statement and proof source without inventing details."
+    "or whether the proof is standard or surprising. Translate formal identifiers into ordinary "
+    "phrases such as compact, Lindelof, neighborhood, closure, filter, or projection; do not copy "
+    "raw source names, camelCase identifiers, dot-qualified names, or proof-code symbols. For "
+    "example, write 'the set is compact' instead of `IsCompact`, 'the neighborhoods of x' instead "
+    "of `𝓝 x`, 'if and only if' instead of `↔`, and 'eventually for large radii' instead of "
+    "`atTop`. Write 'the co-Lindelof filter' with a hyphen, not a source identifier like "
+    "`coLindelof`, and write 'the image of a set under f' instead of source image notation. If "
+    "the source is too terse to reconstruct every step, explain only what follows from the "
+    "statement and proof source without inventing details."
 )
 
 
@@ -171,8 +186,9 @@ def generate_valid_narrative(client: object, request: dict[str, object], *, max_
             prompt = "\n\n".join(
                 [
                     str(request["prompt"]),
-                    "The previous answer used prohibited software, source-code, evaluation, or rating language. "
-                    "Rewrite it as ordinary mathematical prose only, with no commentary about the task.",
+                    f"The previous answer was rejected: {exc}. Rewrite it as ordinary mathematical prose only. "
+                    "Do not use raw theorem names, camelCase identifiers, dot-qualified identifiers, symbols "
+                    "such as ↔, 𝓝, ↑, ∀, or ∃, or any commentary about the task.",
                     "Proof narrative:",
                 ]
             )
@@ -229,6 +245,7 @@ def validate_narrative(narrative: str) -> None:
         for term in FORBIDDEN_NARRATIVE_TERMS
         if re.search(rf"(?<![a-z0-9_]){re.escape(term)}(?![a-z0-9_])", lowered)
     ]
+    hits.extend(label for pattern, label in FORBIDDEN_NARRATIVE_PATTERNS if pattern.search(narrative))
     if hits:
         raise RuntimeError(f"Generated narrative contains forbidden terms: {', '.join(hits)}")
 
