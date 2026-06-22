@@ -1,0 +1,21 @@
+{
+  "contains_answer_key": false,
+  "contains_metric_scores": false,
+  "files": {
+    "README.md": {
+      "bytes": 395,
+      "sha256": "52edac221749128e41554fdde022cf717e6352766d7e12974e0a58c9fc6eb3f5"
+    },
+    "rater_ui.html": {
+      "bytes": 238274,
+      "sha256": "ee93dcbbc104a59598b7b5965c0701a1f5e546039a4c7b59b10eaba62a54c1d2"
+    },
+    "study_packet_blinded.json": {
+      "bytes": 242717,
+      "sha256": "9ef8df146231f9a90f4f952146ae590c328231adae63dfd2f19c9cd88bdf84bc"
+    }
+  },
+  "generated_at": "2026-06-22T05:31:34.942015+00:00",
+  "pair_count": 100,
+  "source_packet": "artifacts/topology/study_packet/study_packet_with_narratives.json"
+}

@@ -365,6 +365,7 @@ Relevant files:
 - `src/priorproof/cli/generate_proof_narratives.py`: optional LLM pass that fills missing proof narratives from only the blinded packet.
 - `src/priorproof/cli/run_llm_baseline.py`: LLM baseline request generation and optional execution.
 - `src/priorproof/cli/evaluate_llm_baseline.py`: LLM baseline response scoring against the packet answer key.
+- `tools/make_release.py`: build the small commit-ready blinded rater release from ignored artifacts.
 
 Run:
 
@@ -432,6 +433,8 @@ priorproof-rater-ui \
   --packet artifacts/topology/study_packet/study_packet_with_narratives.json \
   --out artifacts/topology/study_packet/rater_ui.html
 
+python3 tools/make_release.py --force
+
 priorproof-llm-baseline \
   --packet artifacts/topology/study_packet/study_packet_with_narratives.json \
   --out-dir artifacts/topology/llm_baseline \
@@ -446,6 +449,8 @@ priorproof-evaluate-llm-baseline \
 ```
 
 For scoped validation runs, pass the same `--target-declarations` file to `priorproof-ablate`, `priorproof-counterfactual-priors`, and every `priorproof-score` invocation used to produce validation inputs.
+
+`artifacts/` is intentionally ignored because it contains large generated corpora, model checkpoints, answer keys, metric scores, and private analysis files. Generate `release/study_packet/` when you need a small rater-facing folder that is safe to commit or send to raters. The release command reads the cleaned study packet, strips canonical/stratified labels and metric fields, writes `study_packet_blinded.json`, renders a matching `rater_ui.html`, and records file hashes in `MANIFEST.json`. Commit the generated `release/study_packet/` folder, not `artifacts/topology/study_packet/answer_key.json` or the full `artifacts/` tree.
 
 The public study packet and rater UI intentionally exclude scores, prior probabilities, dependency buckets, and metric-derived explanations. Those fields are kept only in `answer_key.json` and canonical analysis artifacts so human and LLM judgments remain independent. The proof-narrative command reads only the blinded packet. Without `--execute`, it writes narrative requests only; it does not copy the packet forward or invent placeholder prose. `priorproof-rater-ui` and `priorproof-llm-baseline` hard-error unless every side already has a non-empty proof narrative. The LLM baseline command above writes `requests.jsonl` for two models and both prompt strictness levels. Add `--execute` only when `OPENAI_API_KEY` is set and the optional `openai` package is installed; otherwise the artifact is a dry-run request set over the exact blinded rater packet. Run the evaluator after `responses.jsonl` exists; it reports accuracy and invalid/missing-response rates overall, by model, by prompt strictness, and by canonical versus stratified source.
 

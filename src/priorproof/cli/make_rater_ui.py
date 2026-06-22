@@ -194,8 +194,6 @@ def render_html(payload: str) -> str:
         choice,
         left: pair.left.name,
         right: pair.right.name,
-        source: pair.source,
-        canonical_case_id: pair.canonical_case_id || null,
         recorded_at: new Date().toISOString()
       }};
       localStorage.setItem(storageKey, JSON.stringify(responses));
