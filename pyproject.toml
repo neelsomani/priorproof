@@ -7,7 +7,11 @@ name = "priorproof"
 version = "0.1.0"
 description = "Point-in-time novelty scoring for formal proof dependency footprints."
 readme = "README.md"
+license = { file = "LICENSE" }
 requires-python = ">=3.11"
+classifiers = [
+  "License :: OSI Approved :: MIT License",
+]
 dependencies = []
 
 [project.optional-dependencies]
