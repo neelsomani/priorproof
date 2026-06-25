@@ -26,7 +26,7 @@ The one residual that no mechanism closes is *diffuse* human-mediated influence:
 
 **Domain.** One corpus-dense Mathlib area where reuse meaningfully tracks establishment and comparison classes are large enough for stable percentiles, chosen empirically by density.
 
-## Roadmap
+## Reproduction
 
 **Extraction and corpus.** Stand up Lean/Mathlib with ntp-toolkit and LeanDojo; reproduce premise extraction on a recent and an older commit. Build the quarterly snapshots, normalize extracted declarations into `data/declarations.jsonl`, and compute per-snapshot reuse counts.
 
